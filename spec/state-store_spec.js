@@ -19,7 +19,7 @@ describe("State Store Factory", () => {
     Reducer = ReducerFactory(EventEmitter);
     Hook = HookFactory();
 
-    tick = () =>{ return; };
+    tick = (cb) => setTimeout(cb, 0);
 
   });
 
@@ -98,56 +98,127 @@ describe("State Store Factory", () => {
       expect(setterReducer.$$transform).not.toHaveBeenCalled();
       expect(store.state).toEqual({});
 
-      setTimeout(() => {
+      tick(() => {
         expect(setterReducer.$$transform).toHaveBeenCalled();
         expect(store.state).toEqual({ rabbit: "MQ" });
         done();
-      }, 500);
+      });
+    });
+
+    describe("when called with a non-object delta", () => {
+      it("fails immediately", done => {
+        let setter = () => store.setState("egg basket");
+        expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+        tick(() => {
+          expect(setterReducer.$$transform).not.toHaveBeenCalled();
+          done();
+        });
+      });
     });
 
     describe("consolidating state updates", () => {
       beforeEach(() => {
         spyOn(store, 'trigger');
         expect(store.state).toEqual({});
-        store.setState({
-          rabbit: "MQ"
-        });
-        store.setState({
-          rabbit: "soup"
-        });
-        store.setState({
-          rabbit: "foot"
-        });
-        return store.setState({
-          rabbit: "Roger"
-        });
+
+        store.setState({ rabbit: "MQ" });
+        store.setState({ rabbit: "stew" });
+        store.setState({ rabbit: "foot" });
+        store.setState({ rabbit: "Roger" });
       });
-      xit("consolidates state updates until the callstack clears", () => {
+
+      it("consolidates state updates until the callstack clears", done => {
         expect(store.state).toEqual({});
-        tick();
-        return expect(store.state).toEqual({
-          rabbit: "Roger"
+        tick(() => {
+          expect(store.state).toEqual({ rabbit: "Roger" });
+          done();
         });
       });
-      xit("only calls trigger once per tick", () => {
+      it("only calls trigger once per tick", (done) => {
         expect(store.trigger).not.toHaveBeenCalled();
-        tick();
-        return expect(store.trigger.calls.count()).toEqual(1);
+        tick(() => {
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          done();
+        });
       });
-      xit("does not call trigger if the state has not changed", () => {
+      it("does not call trigger if the state has not changed 1", done => {
         expect(store.trigger).not.toHaveBeenCalled();
-        tick();
-        expect(store.trigger.calls.count()).toEqual(1);
-        store.trigger.calls.reset();
-        store.setState(store.state);
-        tick();
-        expect(store.trigger).not.toHaveBeenCalled();
+
+        tick(() => {
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          store.trigger.calls.reset();
+          store.setState(store.state);
+          expect(store.trigger).not.toHaveBeenCalled();
+          done();
+        });
+      });
+
+      it("does not call trigger if the state has not changed 2", done => {
+        tick(() => {
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          store.trigger.calls.reset();
+          store.setState({rabbit: "Roger"});
+          expect(store.trigger).not.toHaveBeenCalled();
+          done();
+        });
+      });
+    });
+
+    describe("when the changes to state are nested deeply", () => {
+      let rabbit1, rabbit2;
+
+      beforeEach(() => {
+        rabbit1 = {
+          name: "Peter Cottontail",
+          home: {
+            city: "McGregor's garden"
+          }};
+        rabbit2 = {
+          name: "Frank",
+          home: {
+            city: "Middlesex",
+            state: "VA"
+          }};
+
+        store = new StateStore( {rabbits: [rabbit1, rabbit2]} );
+      });
+
+      it("changes the nested state and calls trigger", done => {
+        let rabbit1_b = _.clone(rabbit1);
+        rabbit1_b.home.state = "Connecticut";
         store.setState({
-          rabbit: "Roger"
+          rabbits: [ rabbit1_b, rabbit2 ]
         });
-        tick();
-        return expect(store.trigger).not.toHaveBeenCalled();
+
+        tick(() => {
+          expect(store.state.rabbits[0].home.state).toBe("Connecticut");
+          expect(store.state.rabbits[1]).toBeDefined();
+          done();
+        });
       });
+
+      it("merges multiple changes to the same object", done => {
+        let rabbit1_b = _.merge({}, rabbit1);
+        let rabbit1_c = _.merge({}, rabbit1);
+
+        rabbit1_b.home.state = "Connecticut";
+        expect(rabbit1_b).not.toEqual(rabbit1);
+        store.setState({
+          rabbits: [ rabbit1_b, rabbit2 ]
+        });
+
+        rabbit1_c.home.city = "Hartford";
+        expect(rabbit1_c).not.toEqual(rabbit1_b);
+        store.setState({
+          rabbits: [rabbit1_c, rabbit2]
+        });
+
+        tick(() => {
+          expect(store.state.rabbits[0].home.state).toBe("Connecticut");
+          expect(store.state.rabbits[0].home.city).toBe("Hartford");
+          done();
+        });
+      })
     });
   });
 
