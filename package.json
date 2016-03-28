@@ -1,0 +1,21 @@
+{
+  "name": "redstate",
+  "version": "0.0.1",
+  "description": "Predictable state container for javascript apps, a combination of flux patterns inspired by Redux and Reflux",
+  "main": "redstate.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "flux",
+    "state",
+    "reducer",
+    "redux",
+    "reflux",
+    "immutable",
+    "react",
+    "unidirectional"
+  ],
+  "author": "Ethan Ferrari <ethan@ethanferrari.com>",
+  "license": "MIT"
+}
