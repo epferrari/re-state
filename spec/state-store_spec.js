@@ -228,8 +228,15 @@ describe("State Store Factory", () => {
       store = new StateStore({rabbit: "MQ"});
     });
 
-    it("returns the initial data state",() =>{
+    it("returns the initial data state", done =>{
       expect(store.getInitialState()).toEqual({rabbit: "MQ"});
+
+      store.setState({rabbit: "Roger"});
+      tick(() => {
+        expect(store.state.rabbit).toBe("Roger");
+        expect(store.getInitialState()).toEqual({rabbit: "MQ"});
+        done();
+      });
     });
   });
 
