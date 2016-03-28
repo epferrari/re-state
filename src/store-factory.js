@@ -139,7 +139,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     }.bind(this);
 
     // set the store's first reducer to handle direct setState operations
-    let stateSetter = new Reducer( (lastState, delta) => _.merge.apply(_, [{}].concat(delta.pendingSetOps)) );
+    let stateSetter = new Reducer( (lastState, delta) => _.merge.apply(_, [{}].concat(delta.pendingSets)) );
     this.addReducer(stateSetter);
 
     /**
@@ -151,9 +151,15 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @memberof StateStore
     */
     this.setState = function setState(newState){
-      this.emitter.emit(SET_EVENT, newState)
-      pendingSets.push(newState)
-      stateSetter({pendingSetOps: pendingSets});
+      if(newState == undefined){
+        return;
+      }else if(newState !== undefined && !_.isPlainObject(newState)){
+        throw new Error(StateStore.errors.INVALID_DELTA);
+      }else{
+        this.emitter.emit(SET_EVENT, newState)
+        pendingSets.push(newState)
+        stateSetter({pendingSets: pendingSets});
+      }
     };
 
 
