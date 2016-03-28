@@ -1,6 +1,8 @@
+"use-strict";
+
 module.exports = function ReducerFactory(EventEmitter){
 
-  REDUCE_EVENT = 'REDUCER_INVOKED';
+  const REDUCE_EVENT = 'REDUCER_INVOKED';
 
   function Reducer(transformer){
     const emitter = new EventEmitter();
