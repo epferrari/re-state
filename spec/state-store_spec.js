@@ -1,9 +1,9 @@
+"use-strict";
 
 import EventEmitter from 'events';
 import Immutable from 'immutable';
 import _ from 'lodash';
 
-console.log('cwd', process.cwd())
 
 import ReducerFactory from '../src/reducer-factory';
 import HookFactory from '../src/hook-factory';
@@ -11,44 +11,59 @@ import StateStoreFactory from '../src/store-factory';
 
 
 
-describe("State Store Factory", function() {
+describe("State Store Factory", () => {
   var StateStore, Reducer, Hook, store, tick;
 
-  tick = _.noop();
-
-  beforeEach(function() {
+  beforeEach(() => {
     StateStore = StateStoreFactory(Immutable, EventEmitter, _);
     Reducer = ReducerFactory(EventEmitter);
     Hook = HookFactory();
+
+    tick = () =>{ return; };
+
   });
 
-  describe("constructor", function() {
-    it("initializes with an immutable state", function() {
+  describe("constructor", () => {
+    it("initializes with an `immutable` state", () => {
       store = new StateStore({
         rabbit: "MQ"
       });
-      expect(function() {
+      expect(() => {
         return store.state = {
           rabbit: "stew"
         };
       }).toThrow();
       expect(store.state.rabbit).toEqual("MQ");
     });
-    it("initializes with an immutable emitter property", function() {
+
+    it("initializes with an `immutable` emitter property", () => {
       store = new StateStore();
-      expect(typeof store.emitter).toBeDefined();
-      expect(function() {
+      expect(store.emitter).toBeDefined();
+      expect(() => {
         return store.emitter = true;
       }).toThrow();
     });
-    describe("when called with no arguments", function() {
-      it("initializes an empty state object", function() {
+
+    it("initializes with an immutable `reducers` property", () => {
+      store = new StateStore();
+      expect(store.reducers).toBeDefined();
+      expect( () => { store.reducers = []} ).toThrow();
+    });
+
+    it("adds an initial reducer",() => {
+      store = new StateStore();
+      expect(store.reducers.length).toEqual(1);
+    });
+
+    describe("when called with no arguments", () => {
+      it("initializes an empty state object", () => {
         store = new StateStore();
         expect(store.state).toEqual({});
       });
     });
-    return describe("when called with an object argument", function() {
-      it("initializes with an initial state", function() {
+
+    describe("when called with an object argument", () => {
+      it("initializes with an initial state", () => {
         store = new StateStore({
           rabbit: "MQ"
         });
@@ -57,26 +72,41 @@ describe("State Store Factory", function() {
         });
       });
     });
+
+    describe("when initialized with a non-object initial state", () => {
+      it("throws an error", () => {
+        let storeCreator = () => {
+          return new StateStore("Roger Rabbit");
+        };
+        expect(storeCreator).toThrow(new Error(StateStore.errors.INVALID_DELTA) );
+      });
+    });
   });
 
-  /*
-  describe("setState()", function() {
-    beforeEach(function() {
-      return store = new StateStore();
+  describe("setState()", () => {
+    var setterReducer;
+    beforeEach(() => {
+      store = new StateStore();
+      setterReducer = store.reducers[0];
+      spyOn(setterReducer, '$$transform').and.callThrough();
     });
-    it("does not set the state immediately", function() {
+
+    it("defers setting state until next tick", (done) => {
       expect(store.state).toEqual({});
-      store.setState({
-        rabbit: "MQ"
-      });
+
+      store.setState({ rabbit: "MQ" });
+      expect(setterReducer.$$transform).not.toHaveBeenCalled();
       expect(store.state).toEqual({});
-      tick();
-      return expect(store.state).toEqual({
-        rabbit: "MQ"
-      });
+
+      setTimeout(() => {
+        expect(setterReducer.$$transform).toHaveBeenCalled();
+        expect(store.state).toEqual({ rabbit: "MQ" });
+        done();
+      }, 500);
     });
-    return describe("consolidating state updates", function() {
-      beforeEach(function() {
+
+    describe("consolidating state updates", () => {
+      beforeEach(() => {
         spyOn(store, 'trigger');
         expect(store.state).toEqual({});
         store.setState({
@@ -92,19 +122,19 @@ describe("State Store Factory", function() {
           rabbit: "Roger"
         });
       });
-      it("consolidates state updates until the callstack clears", function() {
+      xit("consolidates state updates until the callstack clears", () => {
         expect(store.state).toEqual({});
         tick();
         return expect(store.state).toEqual({
           rabbit: "Roger"
         });
       });
-      it("only calls trigger once per tick", function() {
+      xit("only calls trigger once per tick", () => {
         expect(store.trigger).not.toHaveBeenCalled();
         tick();
         return expect(store.trigger.calls.count()).toEqual(1);
       });
-      return it("does not call trigger if the state has not changed", function() {
+      xit("does not call trigger if the state has not changed", () => {
         expect(store.trigger).not.toHaveBeenCalled();
         tick();
         expect(store.trigger.calls.count()).toEqual(1);
@@ -120,80 +150,94 @@ describe("State Store Factory", function() {
       });
     });
   });
-  describe("listenTo()", function() {
+
+
+  describe("getInitialState()", () =>{
+    beforeEach(() =>{
+      store = new StateStore({rabbit: "MQ"});
+    });
+
+    it("returns the initial data state",() =>{
+      expect(store.getInitialState()).toEqual({rabbit: "MQ"});
+    });
+  });
+
+
+  /*
+  describe("listenTo()", () => {
     var action;
     action = void 0;
-    beforeEach(function() {
+    beforeEach(() => {
       store = new StateStore();
       action = new Action();
       return spyOn(action, 'triggers').and.callThrough();
     });
-    describe("when reaction is passed as function", function() {
-      beforeEach(function() {
+    describe("when reaction is passed as function", () => {
+      beforeEach(() => {
         store.reactionA = function(name) {
           return this.name = name;
         };
         spyOn(store, 'reactionA').and.callThrough();
         return store.listenTo(action, store.reactionA);
       });
-      it("registers a reaction with an Action", function() {
+      it("registers a reaction with an Action", () => {
         return expect(action.triggers).toHaveBeenCalled();
       });
-      it("invokes registered reactions with store as `this` binding", function() {
+      it("invokes registered reactions with store as `this` binding", () => {
         action("Peter");
         return expect(store.reactionA.calls.mostRecent().object).toEqual(store);
       });
-      return it("invokes registered reactions with arguments passed to action", function() {
+      return it("invokes registered reactions with arguments passed to action", () => {
         action("Peter");
         return expect(store.name).toBe("Peter");
       });
     });
-    describe("when reaction is passed a string name of store method", function() {
-      beforeEach(function() {
+    describe("when reaction is passed a string name of store method", () => {
+      beforeEach(() => {
         store.reactionB = function(name) {
           return this.name = name + " Rabbit";
         };
         spyOn(store, 'reactionB').and.callThrough();
         return store.listenTo(action, "reactionB");
       });
-      it("registers a reaction with an Action", function() {
+      it("registers a reaction with an Action", () => {
         return expect(action.triggers).toHaveBeenCalled();
       });
-      it("invokes registered reactions with store as `this` binding", function() {
+      it("invokes registered reactions with store as `this` binding", () => {
         action("Jack");
         return expect(store.reactionB.calls.mostRecent().object).toEqual(store);
       });
-      return it("invokes registered reactions with arguments passed to action", function() {
+      return it("invokes registered reactions with arguments passed to action", () => {
         action("Jack");
         return expect(store.name).toBe("Jack Rabbit");
       });
     });
-    return describe("when action is not an instance of Action", function() {
-      return it("throws an error", function() {
+    return describe("when action is not an instance of Action", () => {
+      return it("throws an error", () => {
         var attempt;
-        attempt = function() {
+        attempt = () => {
           return store.listenTo(_.noop, store.reactionA);
         };
         return expect(attempt).toThrow();
       });
     });
   });
-  describe("addListener()", function() {
+  describe("addListener()", () => {
     var cb;
     cb = void 0;
-    beforeEach(function() {
+    beforeEach(() => {
       store = new StateStore({
         rabbit: "Benjamin"
       });
       return cb = jasmine.createSpy();
     });
-    it("calls the listener immediately with current state", function() {
+    it("calls the listener immediately with current state", () => {
       store.addListener(cb);
       return expect(cb).toHaveBeenCalledWith({
         rabbit: "Benjamin"
       });
     });
-    return it("calls the listener when the state updates", function() {
+    return it("calls the listener when the state updates", () => {
       store.addListener(cb);
       cb.calls.reset();
       store.setState({
@@ -208,10 +252,10 @@ describe("State Store Factory", function() {
       });
     });
   });
-  describe("trigger()", function() {
+  describe("trigger()", () => {
     var cb;
     cb = void 0;
-    beforeEach(function() {
+    beforeEach(() => {
       store = new StateStore({
         rabbit: "Benjamin"
       });
@@ -219,7 +263,7 @@ describe("State Store Factory", function() {
       store.addListener(cb);
       return cb.calls.reset();
     });
-    return it("notifies listeners with the current state", function() {
+    return it("notifies listeners with the current state", () => {
       expect(cb).not.toHaveBeenCalled();
       store.trigger();
       return expect(cb).toHaveBeenCalledWith({
@@ -227,10 +271,10 @@ describe("State Store Factory", function() {
       });
     });
   });
-  return describe("addReducer()", function() {
+  return describe("addReducer()", () => {
     var storeListener;
     storeListener = void 0;
-    beforeEach(function() {
+    beforeEach(() => {
       store = new StateStore({
         rabbit: "Benjamin"
       });
@@ -239,7 +283,7 @@ describe("State Store Factory", function() {
       storeListener.calls.reset();
       return spyOn(store, 'trigger');
     });
-    it("reduces a new state from a reducer function", function() {
+    it("reduces a new state from a reducer function", () => {
       var reducer, reducerFn;
       reducerFn = function(lastState, newState) {
         return {
@@ -257,7 +301,7 @@ describe("State Store Factory", function() {
         rabbit: "Jack"
       });
     });
-    it("passes the current state into the reducer", function() {
+    it("passes the current state into the reducer", () => {
       var newState, obj, origState, reducer;
       origState = _.clone(store.state);
       newState = {
@@ -278,10 +322,10 @@ describe("State Store Factory", function() {
       expect(obj.reducerFn).toHaveBeenCalledTimes(1);
       return expect(store.state.rabbit).toEqual("Benjamin Bunny");
     });
-    return describe("when there are multiple reducers called", function() {
+    return describe("when there are multiple reducers called", () => {
       var reducer1, reducer2, reducer3;
       reducer1 = reducer2 = reducer3 = void 0;
-      beforeEach(function() {
+      beforeEach(() => {
         var reducerFn1, reducerFn2, reducerFn3;
         reducerFn1 = function(lastState, update) {
           return {
@@ -305,7 +349,7 @@ describe("State Store Factory", function() {
         store.addReducer(reducer2);
         return store.addReducer(reducer3);
       });
-      it("reduces a new state by multiple reducers in order the reducers were called", function() {
+      it("reduces a new state by multiple reducers in order the reducers were called", () => {
         expect(store.state.rabbit).toEqual('Benjamin');
         reducer1("Peter");
         reducer2({
@@ -316,7 +360,7 @@ describe("State Store Factory", function() {
         expect(store.state.rabbit).toEqual("Peter Cottontail");
         return expect(store.state.phrase).toEqual("Here comes Peter Cottontail");
       });
-      return it("only reduces state with the reducers called during each tick", function() {
+      return it("only reduces state with the reducers called during each tick", () => {
         expect(store.state.rabbit).toEqual('Benjamin');
         reducer1("Roger");
         tick();

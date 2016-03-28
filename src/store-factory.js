@@ -15,15 +15,11 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
   const REDUCE_EVENT = 'REDUCE_INVOKED';
   const REDUCER_ADDED = "REDUCER_ADDED";
 
-  const errors = {
-    INVALID_DELTA: "a delta passed to reducer as new state must be an object literal",
-    INVALID_RETURN: "a reducer must return an object literal to reduce into state",
-    INVALID_REDUCER: "a reducer must be created by either the Reducer or Hook factory"
-  }
-
   function StateStore(initialState){
+    var history, historyIndex, emitter, reducerList, pendingSets, executeReduceCycle, queueReduceCycle;
 
-    var history, historyIndex, emitter, reducers, pendingSetOperations, executeReduceCycle, queueReduceCycle;
+    if(typeof initialState !== 'undefined' && !_.isPlainObject(initialState))
+      throw new Error(StateStore.errors.INVALID_DELTA);
 
     // history: private stack of Immutable Map app states
     // never manipulate history stack directly
@@ -31,16 +27,16 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     // pointer to current state of history
     historyIndex = 0;
 
-    getter(this,'state', () => (Immutable.Map(history[historyIndex]).toJS()) );
-
     emitter = new EventEmitter();
-    getter(this, 'emitter', () => {return emitter} );
-
     // list of reducer to apply to change state
-    reducers = [];
+    reducerList = Immutable.List();
     // any deltas created by calls to setState during the callstack go here
-    pendingSetOperations = [];
+    pendingSets = [];
 
+
+    getter(this, 'emitter', () => emitter );
+    getter(this,'state', () => Immutable.Map(history[historyIndex]).toJS() );
+    getter(this, 'reducers', () => reducerList.toJS() );
 
     /**
     *
@@ -50,8 +46,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     executeReduceCycle = function executeReduceCycle(currentImmutableState){
       this.emitter.emit(REDUCE_EVENT)
 
-      let relevantReducers = StateStore.getRelevantReducers(reducers)
-
+      let relevantReducers = StateStore.getRelevantReducers(this.reducers);
       let maybeNewState = relevantReducers.reduce((lastImmutableState, reducer) => {
         let newState;
 
@@ -64,28 +59,28 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
             return lastImmutableState;
           }else if(reducer.delta && _.isPlainObject(reducer.delta)){
             // action was called with a delta, transform state with the reducer and delta
-            newState = reducer.transform(lastImmutableState.toJS(), reducer.delta);
+            newState = reducer.$$transform(lastImmutableState.toJS(), reducer.delta);
             // clear the reducer of its delta state
             reducer.lastDelta = delta;
             reducer.delta = undefined;
           }else{
             reducer.delta = undefined;
-            throw new Error(errors.INVALID_DELTA);
+            throw new Error(StateStore.errors.INVALID_DELTA);
           }
         }else if(reducer.type === Hook){
           // just apply the hook to transform state
-          newState = reducer.transform(lastImmutableState.toJS())
+          newState = reducer.$$transform(lastImmutableState.toJS())
         }
 
         if( !_.isPlainObject(newState) )
-          throw new Error(errors.INVALID_RETURN);
+          throw new Error(StateStore.errors.INVALID_RETURN);
 
         // Immutable merge so the next reducer gets full state
         return lastImmutableState.merge(newState);
       }, currentImmutableState );
 
       // clear the deck of pending set operations
-      pendingSetOperations = [];
+      pendingSets = [];
 
       // notify on change
       if( !Immutable.is(this.getImmutableState(), maybeNewState)){
@@ -103,12 +98,16 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @private
     */
     queueReduceCycle = function queueReduceCycle(index, newState){
-      reducer = reducers[index];
-      reducer.delta = newState;
-      // determine how many deltas are queued
-      pendingDeltas = _.filter(reducers, reducer => {
-        reducer.delta !== undefined;
+      reducerList = reducerList.update(index, reducer => {
+        reducer.delta = newState;
+        return reducer;
       });
+
+      // determine how many deltas are queued using a js array of this.reducers
+      let pendingDeltas = _.filter(this.reducers, reducer => {
+        return reducer.delta !== undefined;
+      });
+
       // defer a state reduction on the next tick if one isn't already queued
       if(pendingDeltas.length === 1)
         setTimeout(() => executeReduceCycle(this.getImmutableState()), 0);
@@ -122,19 +121,21 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     */
     this.addReducer = function addReducer(reducer){
       if(reducer.$$factory !== Reducer && reducer.$$factory !== Hook)
-        throw new TypeError(errors.INVALID_REDUCER)
+        throw new TypeError(StateStore.errors.INVALID_REDUCER)
 
-      if(!_.contains(reducers, reducer))
-        reducers.push({
-          transform: reducer.$$transformer,
+      if(!_.contains(reducerList.toJS(), reducer)){
+        reducerList = reducerList.push({
+          $$transform: (lastState, delta) => {
+            return reducer.$$transformer(lastState, delta);
+          },
           type: reducer.$$factory
         });
 
-      let reducerIndex = (reducers.length - 1);
-
-      // kick off a reduce cycle when the reducer action is called anywhere in the app
-      reducer.$$bind((newState) => queueReduce(reducerIndex, newState));
-      this.emitter.emit(REDUCER_ADDED, reducer);
+        let reducerIndex = (reducerList.size - 1);
+        // kick off a reduce cycle when the reducer action is called anywhere in the app
+        reducer.$$bind((newState) => queueReduceCycle(reducerIndex, newState));
+        this.emitter.emit(REDUCER_ADDED, reducer);
+      }
     }.bind(this);
 
     // set the store's first reducer to handle direct setState operations
@@ -151,8 +152,8 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     */
     this.setState = function setState(newState){
       this.emitter.emit(SET_EVENT, newState)
-      pendingSetOperations.push(newState)
-      stateSetter({pendingSetOps: pendingSetOperations});
+      pendingSets.push(newState)
+      stateSetter({pendingSetOps: pendingSets});
     };
 
 
@@ -347,8 +348,8 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
   *   during the reduce cycle
   * @static
   */
-  StateStore.getRelevantReducers = function(reducersArray){
-    index = _.reduce(reducersArray, (res, reducer, i) => {
+  StateStore.getRelevantReducers = function getRelevantReducers(reducersArray){
+    let index = _.reduce(reducersArray, (res, reducer, i) => {
       if(reducer.delta !== undefined)
         res.push(i);
       return res;
@@ -358,7 +359,12 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 
     // get all reducers from index to end of list
     return reducersArray.slice(index)
-  }
+  };
+
+  getter(StateStore, 'errors', () => ({}) );
+  getter( StateStore.errors, 'INVALID_DELTA', () => "a delta passed to reducer as new state must be an object literal" );
+  getter( StateStore.errors, 'INVALID_RETURN', () => "a reducer must return an object literal to reduce into state" );
+  getter( StateStore.errors, 'INVALID_REDUCER' , () => "a reducer must be created by either the Reducer or Hook factory");
 
 
   // return constructor
