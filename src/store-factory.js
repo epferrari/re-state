@@ -146,14 +146,14 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 
     /**
     *
-    * @name addReducer
-    * @param {function} reducer - create with `new reState.Reducer()`
+    * @name listenTo
+    * @param {function} reducer - create with `new Restate.Reducer()`
     * @param {string} strategy - one of ['compound', 'lead', 'tail']
     * @desc execute a reduce cycle when this function is called with a deltaMap
     */
-    this.addReducer = function addReducer(reducer, strategy){
+    this.listenTo = function listenTo(reducer, strategy){
       if(reducer.$$factory == Reducer || reducer.$$factory === Hook){
-        let position = reducerList.size;
+        let index = reducerList.size;
 
         // only add a Reducer once; a Hook can be added multiple times
         if((reducer.$$factory === Hook) || !_.contains(reducerList.toJS(), reducer)){
@@ -161,7 +161,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
             $$transform: (lastState, deltaMap) => {
               return reducer.$$transformer(lastState, deltaMap);
             },
-            index: position,
+            index: index,
             $$strategy: strategy,
             deltaMaps: [],
             type: reducer.$$factory
@@ -169,11 +169,11 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 
 
           // kick off a reduce cycle when the reducer action is called anywhere in the app
-          let removeListener = reducer.$$bind((deltaMap) => queueReduceCycle(position, deltaMap));
+          let removeListener = reducer.$$bind((deltaMap) => queueReduceCycle(index, deltaMap));
           // create a deregistration function to effectively remove the reducer from the reducerList
           let removeReducer = () => {
             removeListener();
-            reducerList = reducerList.update(position, (reducer) => {
+            reducerList = reducerList.update(index, (reducer) => {
               return {
                 $$transform: lastState => lastState,
                 type: Hook
@@ -193,7 +193,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 
     // set the store's first reducer to handle direct setState operations
     let stateSetter = new Reducer((lastState, deltaMap) => _.merge({}, lastState, deltaMap));
-    this.addReducer(stateSetter, Reducer.strategies.COMPOUND);
+    this.listenTo(stateSetter, Reducer.strategies.COMPOUND);
 
     /**
     *
