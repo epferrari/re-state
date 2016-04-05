@@ -1,0 +1,4 @@
+module.exports = {
+  REDUCER_FACTORY: "RESTATE_REDUCER",
+  HOOK_FACTORY: "RESTATE_HOOK"
+};

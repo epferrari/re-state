@@ -1,6 +1,7 @@
 "use-strict";
 
 const getter = require('./utils').getter;
+const {REDUCER_FACTORY, HOOK_FACTORY} =  require("./constants");
 
 module.exports = function ReducerFactory(EventEmitter){
 
@@ -15,7 +16,7 @@ module.exports = function ReducerFactory(EventEmitter){
     }
 
     functor.$$transformer = transformer;
-    functor.$$factory = Reducer;
+    functor.$$factory = REDUCER_FACTORY;
     functor.$$bind = (callback) => {emitter.on(REDUCE_EVENT, callback)};
 
     return functor;

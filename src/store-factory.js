@@ -3,6 +3,7 @@
 const ReducerFactory = require('./reducer-factory');
 const HookFactory = require('./hook-factory');
 const getter = require('./utils').getter;
+const {REDUCER_FACTORY, HOOK_FACTORY} =  require("./constants");
 
 module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 
@@ -70,13 +71,13 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
           // transform using the first delta queued
           deltaMap = reducer.deltaMaps[0];
           return resolveDelta(lastState, deltaMap, reducer.$$transform);
-        case (Reducer.strategie.TAIL):
+        case (Reducer.strategies.TAIL):
           // resolve using the last delta queued
-          deltaMap = reducer.deltaMaps[reducer.deltaMaps.length - 1];
+          deltaMap = reducer.deltaMaps[(reducer.deltaMaps.length - 1)];
           return resolveDelta(lastState, deltaMap, reducer.$$transform);
         default:
           // use tailing strategy
-          let deltaMap = reducer.deltaMaps[reducer.deltaMaps.length - 1];
+          let deltaMap = reducer.deltaMaps[(reducer.deltaMaps.length - 1)];
           return resolveDelta(lastState, deltaMap, reducer.$$transform);
       }
     }
@@ -89,14 +90,13 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     */
     executeReduceCycle = function executeReduceCycle(currentImmutableState){
       this.emitter.emit(REDUCE_EVENT)
-
       let relevantReducers = StateStore.getRelevantReducers(this.reducers);
-      let maybeNewState = relevantReducers.reduce((lastImmutableState, reducer) => {
+      let maybeNewState = _.reduce(relevantReducers,(lastImmutableState, reducer) => {
         let newState;
 
-        if(reducer.type === Reducer){
+        if(reducer.type === REDUCER_FACTORY){
           newState = resolveReducer(lastImmutableState.toJS(), reducer);
-        }else if(reducer.type === Hook){
+        }else if(reducer.type === HOOK_FACTORY){
           // just apply the hook to transform state
           newState = reducer.$$transform(lastImmutableState.toJS())
         }
@@ -119,7 +119,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
       }
     }.bind(this);
 
-
+    let reducePending = false;
     /**
     *
     * @desc queue a reduce cycle on next tick
@@ -132,16 +132,14 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         return reducer;
       });
 
-      // determine how many deltaMaps are queued using a js array of this.reducers (reducerList)
-      let pendingDeltas = _.filter(this.reducers, reducer => {
-        return reducer.deltaMaps.length > 0;
-      });
-
       // defer a state reduction on the next tick if one isn't already queued
-      if(pendingDeltas.length === 1)
+      if(!reducePending){
+        reducePending = true;
         setTimeout(() => {
-          executeReduceCycle(this.getImmutableState())
+          reducePending = false;
+          executeReduceCycle(this.getImmutableState());
         }, 0);
+      }
     }.bind(this);
 
     /**
@@ -152,11 +150,12 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @desc execute a reduce cycle when this function is called with a deltaMap
     */
     this.listenTo = function listenTo(reducer, strategy){
-      if(reducer.$$factory == Reducer || reducer.$$factory === Hook){
+
+      if((reducer.$$factory == REDUCER_FACTORY) || (reducer.$$factory === HOOK_FACTORY)){
         let index = reducerList.size;
 
         // only add a Reducer once; a Hook can be added multiple times
-        if((reducer.$$factory === Hook) || !_.contains(reducerList.toJS(), reducer)){
+        if((reducer.$$factory === HOOK_FACTORY) || !_.contains(reducerList.toJS(), reducer)){
           reducerList = reducerList.push({
             $$transform: (lastState, deltaMap) => {
               return reducer.$$transformer(lastState, deltaMap);
