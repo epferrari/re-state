@@ -133,7 +133,7 @@ describe("State Store Factory", () => {
 
         setter = () => {
           store.setState(() => true)
-          jasmine.clock().tick()
+          jasmine.clock().tick(0)
         }
         expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
       });
@@ -261,135 +261,94 @@ describe("State Store Factory", () => {
     });
   });
 
-/*
-  describe("addReducer()", () => {
-    let addItem, removeItem;
+
+  describe("listenTo()", () => {
+    let addItem, removeItem, clearCart, updatePrice, checkout;
 
     beforeEach(() => {
-      store = new StateStore({items: []});
+      store = new StateStore({
+        items: [],
+        priceList: {0: .25, 1: .50, 2: .75}
+      });
+
+      let getItemIndex = (id, items) => {
+        _.findIndex(items, item => {
+          return item.id === id;
+        });
+      };
+
+      let getPrice = (id) => store.state.priceList[id] || 0
+
       addItem = new Reducer((lastState, deltaMap) => {
         let {items} = lastState;
-        let itemIndex = _.findIndex(items, item => {
-          return item.id === deltaMap.itemId;
-        });
+        let itemIndex = getItemIndex(deltaMap.id, items);
         let existingItem = items[itemIndex];
-        if(existingItem)
+        if(existingItem){
           existingItem.qty++
           items[itemIndex] = existingItem;
         }else{
-          items[itemIndex] = {
-            id: deltaMap.itemId,
+          items.push({
+            id: deltaMap.id,
             qty: 1
-          };
+          });
         }
+
         return {items: items};
       });
 
       removeItem = new Reducer((lastState, deltaMap) => {
-        let {itemId} = deltaMap;
-        let items = lastState.items;
-        _.remove(items, item => {
-          item.id == itemId;
-        });
-
-        return {items: items}
-      });
-
-      incrementItem = new Reducer((lastState, deltaMap) => {
-        let {itemId} = deltaMap
         let {items} = lastState;
-        let itemIndex = _.findIndex(items, item => {
-          return item.id === itemId;
-        });
+        let itemIndex = getItemIndex(deltaMap.id, items);
         let item = items[itemIndex];
         if(item){
-          item.qty = (item.qty || 0) + 1;
-          item.qty = item.qty > 0 ? item.qty : 1;
+          item.qty--;
+          item.qty = Math.max(item.qty, 0)
           items[itemIndex] = item;
         }
         return {items: items};
       });
 
-      decrementItem = new Reducer((lastState, deltaMap) => {
-        let {itemId} = deltaMap
+      updatePrice = new Reducer((lastState, deltaMap) => {
+        let {priceList} = lastState.priceList;
+        priceList[deltaMap.id] = deltaMap.price;
+        return {priceList: priceList};
+      });
+
+      clearCart = new Reducer((lastState, deltaMap) => {
         let {items} = lastState;
-        let itemIndex = _.findIndex(items, item => {
-          return item.id === itemId;
+        items = _.map(items, item => {
+          item.qty = 0;
+          return item;
         });
-        let item = items[itemIndex];
-        if(item){
-          item.qty = (item.qty || 1) - 1;
-          item.qty = item.qty > 0 ? item.qty : 0;
-          items[itemIndex] = item;
-        }
         return {items: items};
       });
 
       checkout = new Reducer((lastState, deltaMap) => {
-        let total;
-        lastState.items.reduce((subTotal, item) => {
-          subTotal = subTotal + lastState
-        })
-
-      })
-
-
-
-
-
-
-
+        let total = lastState.items.reduce((subTotal, item) => {
+          return subTotal + (getPrice(item.id) * item.qty);
+        }, 0)
+        return {total: total}
+      });
     });
-    describe("when reaction is passed as function", () => {
+
+    describe("tail strategy", () => {
       beforeEach(() => {
-        store.reactionA = function(name) {
-          return this.name = name;
-        };
-        spyOn(store, 'reactionA').and.callThrough();
-        return store.listenTo(action, store.reactionA);
+        store.listenTo(addItem, "tail");
       });
-      it("registers a reaction with an Action", () => {
-        return expect(action.triggers).toHaveBeenCalled();
-      });
-      it("invokes registered reactions with store as `this` binding", () => {
-        action("Peter");
-        return expect(store.reactionA.calls.mostRecent().object).toEqual(store);
-      });
-      return it("invokes registered reactions with arguments passed to action", () => {
-        action("Peter");
-        return expect(store.name).toBe("Peter");
-      });
-    });
-    describe("when reaction is passed a string name of store method", () => {
-      beforeEach(() => {
-        store.reactionB = function(name) {
-          return this.name = name + " Rabbit";
-        };
-        spyOn(store, 'reactionB').and.callThrough();
-        return store.listenTo(action, "reactionB");
-      });
-      it("registers a reaction with an Action", () => {
-        return expect(action.triggers).toHaveBeenCalled();
-      });
-      it("invokes registered reactions with store as `this` binding", () => {
-        action("Jack");
-        return expect(store.reactionB.calls.mostRecent().object).toEqual(store);
-      });
-      return it("invokes registered reactions with arguments passed to action", () => {
-        action("Jack");
-        return expect(store.name).toBe("Jack Rabbit");
-      });
-    });
-    return describe("when action is not an instance of Action", () => {
-      return it("throws an error", () => {
-        var attempt;
-        attempt = () => {
-          return store.listenTo(_.noop, store.reactionA);
-        };
-        return expect(attempt).toThrow();
+
+      it("updates the state from the last call to reducer", () => {
+        expect(store.state.items).toEqual([]);
+        addItem({id: 0});
+        addItem({id: 2});
+        addItem({id: 1});
+
+        jasmine.clock().tick(0);
+        expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+
       });
     });
   });
+  /*
   describe("addListener()", () => {
     var cb;
     cb = void 0;
