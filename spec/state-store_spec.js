@@ -84,35 +84,57 @@ describe("State Store Factory", () => {
   });
 
   describe("setState()", () => {
-    var setterReducer;
+    var stateSetter;
     beforeEach(() => {
       store = new StateStore();
-      setterReducer = store.reducers[0];
-      spyOn(setterReducer, '$$transform').and.callThrough();
+      stateSetter = store.reducers[0];
+      spyOn(stateSetter, '$$transform').and.callThrough();
+      jasmine.clock().install()
     });
 
-    it("defers setting state until next tick", (done) => {
+    afterEach(jasmine.clock().uninstall)
+
+    it("defers setting state until next tick", () => {
       expect(store.state).toEqual({});
 
       store.setState({ rabbit: "MQ" });
-      expect(setterReducer.$$transform).not.toHaveBeenCalled();
+
+      expect(stateSetter.$$transform).not.toHaveBeenCalled();
       expect(store.state).toEqual({});
 
-      tick(() => {
-        expect(setterReducer.$$transform).toHaveBeenCalled();
-        expect(store.state).toEqual({ rabbit: "MQ" });
-        done();
-      });
+      jasmine.clock().tick(0)
+
+      expect(stateSetter.$$transform).toHaveBeenCalled();
+      expect(store.state).toEqual({ rabbit: "MQ" });
     });
 
     describe("when called with a non-object delta", () => {
-      it("fails immediately", done => {
-        let setter = () => store.setState("egg basket");
+      it("setState throws an error", () => {
+        let setter;
+
+        setter = () => {
+          store.setState("egg basket");
+          jasmine.clock().tick(0)
+        };
         expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
-        tick(() => {
-          expect(setterReducer.$$transform).not.toHaveBeenCalled();
-          done();
-        });
+
+        setter = () => {
+          store.setState(1);
+          jasmine.clock().tick(0)
+        };
+        expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+
+        setter = () => {
+          store.setState(true);
+          jasmine.clock().tick(0)
+        };
+        expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+
+        setter = () => {
+          store.setState(() => true)
+          jasmine.clock().tick()
+        }
+        expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
       });
     });
 
@@ -127,43 +149,39 @@ describe("State Store Factory", () => {
         store.setState({ rabbit: "Roger" });
       });
 
-      it("consolidates state updates until the callstack clears", done => {
+      it("consolidates state updates until the callstack clears", () => {
         expect(store.state).toEqual({});
-        tick(() => {
-          expect(store.state).toEqual({ rabbit: "Roger" });
-          done();
-        });
-      });
-      it("only calls trigger once per tick", (done) => {
-        expect(store.trigger).not.toHaveBeenCalled();
-        tick(() => {
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          done();
-        });
-      });
-      it("does not call trigger if the state has not changed 1", done => {
-        expect(store.trigger).not.toHaveBeenCalled();
-
-        tick(() => {
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
-          store.setState(store.state);
-          expect(store.trigger).not.toHaveBeenCalled();
-          done();
-        });
+        jasmine.clock().tick(0);
+        expect(store.state).toEqual({ rabbit: "Roger" });
       });
 
-      it("does not call trigger if the state has not changed 2", done => {
-        tick(() => {
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
-          store.setState({rabbit: "Roger"});
-          expect(store.trigger).not.toHaveBeenCalled();
-          done();
-        });
+      it("only calls trigger once per tick", () => {
+        expect(store.trigger).not.toHaveBeenCalled();
+        jasmine.clock().tick(0);
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+      });
+
+      it("does not call trigger if the state has not changed 1", () => {
+        expect(store.trigger).not.toHaveBeenCalled();
+        jasmine.clock().tick(0);
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        store.trigger.calls.reset();
+        store.setState(store.state);
+        jasmine.clock().tick(0);
+        expect(store.trigger).not.toHaveBeenCalled();
+      });
+
+      it("does not call trigger if the state has not changed 2", () => {
+        expect(store.trigger).not.toHaveBeenCalled();
+        jasmine.clock().tick(0);
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        store.trigger.calls.reset();
+        store.setState({rabbit: "Roger"});
+        jasmine.clock().tick(0);
+        expect(store.trigger).not.toHaveBeenCalled();
       });
     });
-
+    /*
     describe("when the changes to state are nested deeply", () => {
       let rabbit1, rabbit2;
 
@@ -220,6 +238,7 @@ describe("State Store Factory", () => {
         });
       })
     });
+*/
   });
 
 
@@ -240,15 +259,84 @@ describe("State Store Factory", () => {
     });
   });
 
+/*
+  describe("addReducer()", () => {
+    let addItem, removeItem;
 
-  /*
-  describe("listenTo()", () => {
-    var action;
-    action = void 0;
     beforeEach(() => {
-      store = new StateStore();
-      action = new Action();
-      return spyOn(action, 'triggers').and.callThrough();
+      store = new StateStore({items: []});
+      addItem = new Reducer((lastState, deltaMap) => {
+        let {items} = lastState;
+        let itemIndex = _.findIndex(items, item => {
+          return item.id === deltaMap.itemId;
+        });
+        let existingItem = items[itemIndex];
+        if(existingItem)
+          existingItem.qty++
+          items[itemIndex] = existingItem;
+        }else{
+          items[itemIndex] = {
+            id: deltaMap.itemId,
+            qty: 1
+          };
+        }
+        return {items: items};
+      });
+
+      removeItem = new Reducer((lastState, deltaMap) => {
+        let {itemId} = deltaMap;
+        let items = lastState.items;
+        _.remove(items, item => {
+          item.id == itemId;
+        });
+
+        return {items: items}
+      });
+
+      incrementItem = new Reducer((lastState, deltaMap) => {
+        let {itemId} = deltaMap
+        let {items} = lastState;
+        let itemIndex = _.findIndex(items, item => {
+          return item.id === itemId;
+        });
+        let item = items[itemIndex];
+        if(item){
+          item.qty = (item.qty || 0) + 1;
+          item.qty = item.qty > 0 ? item.qty : 1;
+          items[itemIndex] = item;
+        }
+        return {items: items};
+      });
+
+      decrementItem = new Reducer((lastState, deltaMap) => {
+        let {itemId} = deltaMap
+        let {items} = lastState;
+        let itemIndex = _.findIndex(items, item => {
+          return item.id === itemId;
+        });
+        let item = items[itemIndex];
+        if(item){
+          item.qty = (item.qty || 1) - 1;
+          item.qty = item.qty > 0 ? item.qty : 0;
+          items[itemIndex] = item;
+        }
+        return {items: items};
+      });
+
+      checkout = new Reducer((lastState, deltaMap) => {
+        let total;
+        lastState.items.reduce((subTotal, item) => {
+          subTotal = subTotal + lastState
+        })
+
+      })
+
+
+
+
+
+
+
     });
     describe("when reaction is passed as function", () => {
       beforeEach(() => {
