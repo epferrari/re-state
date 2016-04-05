@@ -101,9 +101,10 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
           newState = reducer.$$transform(lastImmutableState.toJS())
         }
         // clear deltaMaps for the next cycle and create new immutable list
-        let indexToUpdate = _.indexOf(reducerList.toJS(), reducer);
-        reducer.deltaMaps = [];
-        reducerList = reducerList.update(indexToUpdate, (reducer) => reducer);
+        reducerList = reducerList.update(reducer.index, (reducer) => {
+          reducer.deltaMaps = [];
+          return reducer;
+        });
 
         // Immutable merge so the next reducer gets full state
         return lastImmutableState.merge(newState);
@@ -151,35 +152,42 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @desc execute a reduce cycle when this function is called with a deltaMap
     */
     this.addReducer = function addReducer(reducer, strategy){
-      if(reducer.$$factory !== Reducer && reducer.$$factory !== Hook)
-        throw new TypeError(StateStore.errors.INVALID_REDUCER)
+      if(reducer.$$factory == Reducer || reducer.$$factory === Hook){
+        let position = reducerList.size;
 
-      if(!_.contains(reducerList.toJS(), reducer)){
-        reducerList = reducerList.push({
-          $$transform: (lastState, deltaMap) => {
-            return reducer.$$transformer(lastState, deltaMap);
-          },
-          $$strategy: strategy,
-          deltaMaps: [],
-          type: reducer.$$factory
-        });
-
-        let position = (reducerList.size - 1);
-        // kick off a reduce cycle when the reducer action is called anywhere in the app
-        let removeListener = reducer.$$bind((deltaMap) => queueReduceCycle(position, deltaMap));
-
-        this.emitter.emit(REDUCER_ADDED, reducer);
-
-        // return a function to effectively remove the reducer
-        return () => {
-          removeListener();
-          reducerList = reducerList.update(position, (reducer) => {
-            return {
-              $$transform: lastState => lastState,
-              type: Hook
-            }
+        // only add a Reducer once; a Hook can be added multiple times
+        if((reducer.$$factory === Hook) || !_.contains(reducerList.toJS(), reducer)){
+          reducerList = reducerList.push({
+            $$transform: (lastState, deltaMap) => {
+              return reducer.$$transformer(lastState, deltaMap);
+            },
+            index: position,
+            $$strategy: strategy,
+            deltaMaps: [],
+            type: reducer.$$factory
           });
-        };
+
+
+          // kick off a reduce cycle when the reducer action is called anywhere in the app
+          let removeListener = reducer.$$bind((deltaMap) => queueReduceCycle(position, deltaMap));
+          // create a deregistration function to effectively remove the reducer from the reducerList
+          let removeReducer = () => {
+            removeListener();
+            reducerList = reducerList.update(position, (reducer) => {
+              return {
+                $$transform: lastState => lastState,
+                type: Hook
+              }
+            });
+          }
+
+          this.emitter.emit(REDUCER_ADDED, reducer);
+
+          // return deregistration function
+          return removeReducer;
+        }
+      } else {
+        throw new Error(StateStore.errors.INVALID_REDUCER);
       }
     }.bind(this);
 
@@ -392,9 +400,9 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
   * @static
   */
   StateStore.getRelevantReducers = function getRelevantReducers(reducersArray){
-    let index = _.reduce(reducersArray, (res, reducer, i) => {
-      if(reducer.deltaMap !== undefined)
-        res.push(i);
+    let index = _.reduce(reducersArray, (res, reducer, idx) => {
+      if(reducer.deltaMaps.length > 0)
+        res.push(idx);
       return res;
     },[])
     .sort((a, b) => (a - b))
