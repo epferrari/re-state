@@ -18,10 +18,13 @@ describe("State Store Factory", () => {
     StateStore = StateStoreFactory(Immutable, EventEmitter, _);
     Reducer = ReducerFactory(EventEmitter);
     Hook = HookFactory();
+    jasmine.clock().install()
 
     tick = (cb) => setTimeout(cb, 0);
 
   });
+
+  afterEach(jasmine.clock().uninstall)
 
   describe("constructor", () => {
     it("initializes with an `immutable` state", () => {
@@ -89,10 +92,8 @@ describe("State Store Factory", () => {
       store = new StateStore();
       stateSetter = store.reducers[0];
       spyOn(stateSetter, '$$transform').and.callThrough();
-      jasmine.clock().install()
-    });
 
-    afterEach(jasmine.clock().uninstall)
+    });
 
     it("defers setting state until next tick", () => {
       expect(store.state).toEqual({});
@@ -181,7 +182,7 @@ describe("State Store Factory", () => {
         expect(store.trigger).not.toHaveBeenCalled();
       });
     });
-    /*
+
     describe("when the changes to state are nested deeply", () => {
       let rabbit1, rabbit2;
 
@@ -201,44 +202,46 @@ describe("State Store Factory", () => {
         store = new StateStore( {rabbits: [rabbit1, rabbit2]} );
       });
 
-      it("changes the nested state and calls trigger", done => {
+      it("changes the nested state and calls trigger", () => {
         let rabbit1_b = _.clone(rabbit1);
         rabbit1_b.home.state = "Connecticut";
         store.setState({
           rabbits: [ rabbit1_b, rabbit2 ]
         });
-
-        tick(() => {
-          expect(store.state.rabbits[0].home.state).toBe("Connecticut");
-          expect(store.state.rabbits[1]).toBeDefined();
-          done();
-        });
+        jasmine.clock().tick(0);
+        expect(store.state.rabbits[0].home.state).toBe("Connecticut");
+        expect(store.state.rabbits[1]).toBeDefined();
       });
 
-      it("merges multiple changes to the same object", done => {
+      it("merges multiple changes to the same object", () => {
         let rabbit1_b = _.merge({}, rabbit1);
         let rabbit1_c = _.merge({}, rabbit1);
 
         rabbit1_b.home.state = "Connecticut";
         expect(rabbit1_b).not.toEqual(rabbit1);
+
         store.setState({
           rabbits: [ rabbit1_b, rabbit2 ]
         });
 
         rabbit1_c.home.city = "Hartford";
         expect(rabbit1_c).not.toEqual(rabbit1_b);
+
         store.setState({
           rabbits: [rabbit1_c, rabbit2]
         });
 
-        tick(() => {
-          expect(store.state.rabbits[0].home.state).toBe("Connecticut");
-          expect(store.state.rabbits[0].home.city).toBe("Hartford");
-          done();
-        });
-      })
+        let lastStateRabbit1 = store.state.rabbits[0];
+        expect(lastStateRabbit1.home.state).toBeUndefined();
+        expect(lastStateRabbit1.home.city).toBe("McGregor's garden");
+
+        jasmine.clock().tick(0);
+
+        let newStateRabbit1 = store.state.rabbits[0];
+        expect(newStateRabbit1.home.state).toBe("Connecticut");
+        expect(newStateRabbit1.home.city).toBe("Hartford");
+      });
     });
-*/
   });
 
 
@@ -247,15 +250,14 @@ describe("State Store Factory", () => {
       store = new StateStore({rabbit: "MQ"});
     });
 
-    it("returns the initial data state", done =>{
+    it("returns the initial data state", () =>{
       expect(store.getInitialState()).toEqual({rabbit: "MQ"});
 
       store.setState({rabbit: "Roger"});
-      tick(() => {
-        expect(store.state.rabbit).toBe("Roger");
-        expect(store.getInitialState()).toEqual({rabbit: "MQ"});
-        done();
-      });
+      jasmine.clock().tick(0)
+
+      expect(store.state.rabbit).toBe("Roger");
+      expect(store.getInitialState()).toEqual({rabbit: "MQ"});
     });
   });
 
