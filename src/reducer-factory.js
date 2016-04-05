@@ -1,5 +1,7 @@
 "use-strict";
 
+const getter = require('./utils').getter;
+
 module.exports = function ReducerFactory(EventEmitter){
 
   const REDUCE_EVENT = 'REDUCER_INVOKED';
@@ -18,6 +20,12 @@ module.exports = function ReducerFactory(EventEmitter){
 
     return functor;
   }
+
+  const strategies = {};
+  getter(strategies, 'COMPOUND', () => 'compound');
+  getter(strategies, 'HEAD', () => 'head');
+  getter(strategies, 'TAIL', () => 'tail');
+  getter(Reducer, 'strategies', () => strategies);
 
   return Reducer;
 };
