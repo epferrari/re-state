@@ -91,7 +91,7 @@ describe("State Store Factory", () => {
     beforeEach(() => {
       store = new StateStore();
       stateSetter = store.reducers[0];
-      spyOn(stateSetter, '$$transform').and.callThrough();
+      spyOn(stateSetter, '$invoke').and.callThrough();
 
     });
 
@@ -100,12 +100,12 @@ describe("State Store Factory", () => {
 
       store.setState({ rabbit: "MQ" });
 
-      expect(stateSetter.$$transform).not.toHaveBeenCalled();
+      expect(stateSetter.$invoke).not.toHaveBeenCalled();
       expect(store.state).toEqual({});
 
       jasmine.clock().tick(0)
 
-      expect(stateSetter.$$transform).toHaveBeenCalled();
+      expect(stateSetter.$invoke).toHaveBeenCalled();
       expect(store.state).toEqual({ rabbit: "MQ" });
     });
 
@@ -279,7 +279,7 @@ describe("State Store Factory", () => {
 
       let getPrice = (id) => store.state.priceList[id] || 0
 
-      addItem = new Reducer((lastState, deltaMap) => {
+      addItem = new Reducer('addItem', (lastState, deltaMap) => {
         let {items} = lastState;
         let itemIndex = getItemIndex(deltaMap.id, items);
         let existingItem = items[itemIndex];
@@ -296,7 +296,7 @@ describe("State Store Factory", () => {
         return {items: items};
       });
 
-      removeItem = new Reducer((lastState, deltaMap) => {
+      removeItem = new Reducer('removeItem', (lastState, deltaMap) => {
         let {items} = lastState;
         let itemIndex = getItemIndex(deltaMap.id, items);
         let item = items[itemIndex];
@@ -308,13 +308,13 @@ describe("State Store Factory", () => {
         return {items: items};
       });
 
-      updatePrice = new Reducer((lastState, deltaMap) => {
+      updatePrice = new Reducer('updatePrice', (lastState, deltaMap) => {
         let {priceList} = lastState.priceList;
         priceList[deltaMap.id] = deltaMap.price;
         return {priceList: priceList};
       });
 
-      clearCart = new Reducer((lastState, deltaMap) => {
+      clearCart = new Reducer('clearCart', (lastState, deltaMap) => {
         let {items} = lastState;
         items = _.map(items, item => {
           item.qty = 0;
@@ -323,7 +323,7 @@ describe("State Store Factory", () => {
         return {items: items};
       });
 
-      checkout = new Reducer((lastState, deltaMap) => {
+      checkout = new Reducer('checkout', (lastState, deltaMap) => {
         let total = lastState.items.reduce((subTotal, item) => {
           return subTotal + (getPrice(item.id) * item.qty);
         }, 0)
