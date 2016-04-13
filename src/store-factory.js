@@ -47,26 +47,31 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     /**
     * @desc remove any states from index onward
     * @private
-    * @return historyIndex
+    * @return js intermediate state
     */
     addStateToHistory = function addStateToHistory(newState){
-      if(!Immutable.is(this.getImmutableState(), newState)){
+      let newImmutableState = history[historyIndex].merge(newState)
+      if(!Immutable.is(this.getImmutableState(), newImmutableState)){
         history = history.slice(0, historyIndex + 1);
-        history.push(newState);
+        history.push(newImmutableState);
         historyIndex++;
       }
-      return historyIndex;
+      return newState;
     }.bind(this);
 
-    resolveDelta = function resolveDelta(lastState, deltaMap, reducerFn){
+    resolveDelta = function resolveDelta(jsState, deltaMap, reducerFn){
       if(deltaMap && _.isPlainObject(deltaMap)){
-        // create an undo function to reset the state to the index before applying the reducer
-        let undoFn = () => {
-          history = history.slice(0, historyIndex + 1);
-          this.trigger();
-        };
 
-        let resolvedState = reducerFn(undoFn, lastState, deltaMap);
+        // create an undo function to reset the state to the index before applying the reducer
+        // pass the function to the wrapped reducerFn to be called when the invoking actionReducer's
+        // returned undo fn is called
+        let undo = function (cachedIndex, cachedState){
+          history = history.slice(0, cachedIndex + 1);
+          historyIndex = cachedIndex;
+          this.trigger();
+        }.bind(this, historyIndex);
+
+        let resolvedState = reducerFn(undo, jsState, deltaMap);
 
         if( !_.isPlainObject(resolvedState) )
           throw new Error(StateStore.errors.INVALID_RETURN);
@@ -111,18 +116,20 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @desc reduce a series of new states from pending reducers
     * @private
     */
-    executeReduceCycle = function executeReduceCycle(previousImmutableState){
-      this.emitter.emit(REDUCE_EVENT)
+    executeReduceCycle = function executeReduceCycle(previousState){
+      this.emitter.emit(REDUCE_EVENT);
+
+      let initialIndex = historyIndex;
       let relevantReducers = StateStore.getRelevantReducers(this.reducers);
-      let maybeNewState = _.reduce(relevantReducers, (state, reducer) => {
+      let maybeNewState = relevantReducers.reduce((state, reducer) => {
         let newState;
 
         if(reducer.type === REDUCER){
           // run the state through the reducer
-          newState = resolveReducer(state.toJS(), reducer);
+          newState = resolveReducer(state, reducer);
         }else if(reducer.type === HOOK){
           // just apply the hook to transform state
-          newState = reducer.$invoke(state.toJS())
+          newState = reducer.$invoke(state);
         }
         // clear deltaMaps for the next cycle and create new immutable list
         reducerList = reducerList.update(reducer.index, (reducer) => {
@@ -130,12 +137,11 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
           return reducer;
         });
 
-        // Immutable merge so the next reducer gets full state
-        return state.merge(newState);
-      }, previousImmutableState );
+        return newState;
+      }, _.merge({}, previousState) );
 
       // notify on change
-      if( !Immutable.is(previousImmutableState, maybeNewState)){
+      if( !Immutable.is(history[initialIndex], this.getImmutableState()) ){
         this.trigger()
       }
     }.bind(this);
@@ -160,7 +166,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         reducePending = true;
         setTimeout(() => {
           reducePending = false;
-          executeReduceCycle(this.getImmutableState());
+          executeReduceCycle(this.state);
         }, 0);
       }
     }.bind(this);

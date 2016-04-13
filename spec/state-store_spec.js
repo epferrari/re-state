@@ -271,6 +271,8 @@ describe("State Store Factory", () => {
         priceList: {0: .25, 1: .50, 2: .75}
       });
 
+      spyOn(store, 'trigger');
+
       let getItemIndex = (id, items) => {
         _.findIndex(items, item => {
           return item.id === id;
@@ -333,7 +335,7 @@ describe("State Store Factory", () => {
 
     describe("tail strategy", () => {
       beforeEach(() => {
-        store.listenTo(addItem, "tail");
+        store.listenTo(addItem, Reducer.strategies.TAIL);
       });
 
       it("updates the state from the last call to reducer", () => {
@@ -345,6 +347,42 @@ describe("State Store Factory", () => {
         jasmine.clock().tick(0);
         expect(store.state.items).toEqual([{id: 1, qty: 1}]);
 
+      });
+
+      describe("undoing with tailing strategy", () => {
+        it("sets the state back to before the last action was called", () => {
+          expect(store.state.items).toEqual([]);
+          let undoAdd = addItem({id: 0});
+
+          jasmine.clock().tick(0);
+          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+
+          undoAdd();
+          expect(store.state.items).toEqual([]);
+        });
+
+        it("does not update the state for reducer actions that were discarded by the tailing strategy", () => {
+          let undoAdd0 = addItem({id: 0});
+          let undoAdd2 = addItem({id: 2});
+          let undoAdd1 = addItem({id: 1});
+
+          jasmine.clock().tick(0);
+          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          store.trigger.calls.reset();
+
+          undoAdd0();
+          expect(store.trigger).not.toHaveBeenCalled();
+          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+
+          undoAdd2();
+          expect(store.trigger).not.toHaveBeenCalled();
+          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+
+          undoAdd1();
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          expect(store.state.items).toEqual([]);
+        });
       });
     });
   });

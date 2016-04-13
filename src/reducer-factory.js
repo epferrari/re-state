@@ -19,7 +19,7 @@ module.exports = function ReducerFactory(EventEmitter){
       callCount++;
       emitter.emit(REDUCE_EVENT, arguments[0]);
       return function(cc){
-        undos[cc]()
+        undos[cc] && undos[cc]()
       }.bind(null, callCount);
     }
 
@@ -30,7 +30,7 @@ module.exports = function ReducerFactory(EventEmitter){
 
     const register = (callback) => {emitter.on(REDUCE_EVENT, callback)};
 
-    defineProperty(functor, 'name', name);
+    defineProperty(functor, 'action', name);
     defineProperty(functor, 'invoke', wrappedTransformer);
     defineProperty(functor, 'type', REDUCER);
     defineProperty(functor, 'addListener', register );
