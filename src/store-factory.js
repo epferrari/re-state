@@ -71,7 +71,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
           this.trigger();
         }.bind(this, historyIndex);
 
-        let resolvedState = reducerInvoke(undo, callToken, jsState, deltaMap);
+        let resolvedState = reducerInvoke(jsState, deltaMap, undo, callToken);
 
         if( !_.isPlainObject(resolvedState) )
           throw new Error(StateStore.errors.INVALID_RETURN);
@@ -185,9 +185,9 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         // only add a Reducer once; a Hook can be added multiple times
         if((reducer.type === HOOK) || !_.contains(reducerList.toJS(), reducer)){
           reducerList = reducerList.push({
-            $invoke: (undoFn, token, lastState, deltaMap) => {
+            $invoke: (lastState, deltaMap, undoFn, token) => {
               /* maybe middleware here later */
-              return reducer.invoke(undoFn, token, lastState, deltaMap);
+              return reducer.invoke(lastState, deltaMap, undoFn, token);
             },
             index: index,
             strategy: strategy,

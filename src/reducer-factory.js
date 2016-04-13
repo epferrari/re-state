@@ -27,7 +27,7 @@ module.exports = function ReducerFactory(EventEmitter){
       }.bind(null, callCount);
     }
 
-    const wrappedTransformer = (undoFn, callToken, lastState, deltaMap) => {
+    const wrappedTransformer = (lastState, deltaMap, undoFn, callToken) => {
       undos[callToken] = undoFn;
       return transformer(lastState, deltaMap);
     };
