@@ -162,7 +162,7 @@ describe("State Store Factory", () => {
         expect(store.trigger).toHaveBeenCalledTimes(1);
       });
 
-      it("does not call trigger if the state has not changed 1", () => {
+      it("does not call trigger if the state has not changed (test 1)", () => {
         expect(store.trigger).not.toHaveBeenCalled();
         jasmine.clock().tick(0);
         expect(store.trigger).toHaveBeenCalledTimes(1);
@@ -172,7 +172,7 @@ describe("State Store Factory", () => {
         expect(store.trigger).not.toHaveBeenCalled();
       });
 
-      it("does not call trigger if the state has not changed 2", () => {
+      it("does not call trigger if the state has not changed (test 2)", () => {
         expect(store.trigger).not.toHaveBeenCalled();
         jasmine.clock().tick(0);
         expect(store.trigger).toHaveBeenCalledTimes(1);
@@ -380,6 +380,65 @@ describe("State Store Factory", () => {
           expect(store.state.items).toEqual([{id: 1, qty: 1}]);
 
           undoAdd1();
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          expect(store.state.items).toEqual([]);
+        });
+      });
+    });
+
+    describe("head strategy", () => {
+      beforeEach(() => {
+        store.listenTo(addItem, Reducer.strategies.HEAD);
+      });
+
+      it("updates the state from the first call to reducer action", () => {
+        expect(store.state.items).toEqual([]);
+        addItem({id: 0});
+        addItem({id: 2});
+        addItem({id: 1});
+
+        jasmine.clock().tick(0);
+        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+
+      });
+
+      describe("undoing with head strategy", () => {
+
+        it("sets the state back to before the first action was called", () => {
+          expect(store.state.items).toEqual([]);
+          let undoAdd = addItem({id: 0});
+
+          jasmine.clock().tick(0);
+          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+
+          undoAdd();
+          expect(store.state.items).toEqual([]);
+        });
+
+        it("does not update the state for reducer actions that were discarded by the head strategy", () => {
+          let undoAdd0 = addItem({id: 0});
+          let undoAdd2 = addItem({id: 2});
+          let undoAdd1 = addItem({id: 1});
+
+          let $addItem = store.reducers[1];
+          spyOn($addItem, '$invoke').and.callThrough()
+
+          jasmine.clock().tick(0);
+
+          expect($addItem.$invoke).toHaveBeenCalledTimes(1);
+          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+          expect(store.trigger).toHaveBeenCalledTimes(1);
+          store.trigger.calls.reset();
+
+          undoAdd1();
+          expect(store.trigger).not.toHaveBeenCalled();
+          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+
+          undoAdd2();
+          expect(store.trigger).not.toHaveBeenCalled();
+          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
+
+          undoAdd0();
           expect(store.trigger).toHaveBeenCalledTimes(1);
           expect(store.state.items).toEqual([]);
         });

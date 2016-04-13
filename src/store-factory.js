@@ -59,19 +59,19 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
       return newState;
     }.bind(this);
 
-    resolveDelta = function resolveDelta(jsState, deltaMap, reducerFn){
+    resolveDelta = function resolveDelta(jsState, deltaMap, reducerInvoke, callToken){
       if(deltaMap && _.isPlainObject(deltaMap)){
 
         // create an undo function to reset the state to the index before applying the reducer
         // pass the function to the wrapped reducerFn to be called when the invoking actionReducer's
         // returned undo fn is called
-        let undo = function (cachedIndex, cachedState){
+        let undo = function (cachedIndex){
           history = history.slice(0, cachedIndex + 1);
           historyIndex = cachedIndex;
           this.trigger();
         }.bind(this, historyIndex);
 
-        let resolvedState = reducerFn(undo, jsState, deltaMap);
+        let resolvedState = reducerInvoke(undo, callToken, jsState, deltaMap);
 
         if( !_.isPlainObject(resolvedState) )
           throw new Error(StateStore.errors.INVALID_RETURN);
@@ -86,27 +86,27 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     }.bind(this)
 
     resolveReducer = function resolveReducer(lastState, reducer){
-      let deltaMap;
-      let reducerFn = reducer.$invoke;
-
+      let c, last;
       switch(reducer.strategy){
         case (Reducer.strategies.COMPOUND):
           // reduce down all the deltas
-          return _.reduce(reducer.deltaMaps, (state, deltaMap) => {
-            return resolveDelta(state, deltaMap, reducerFn);
+          return _.reduce(reducer.calls, (state, c) => {
+            return resolveDelta(state, c.deltaMap, reducer.$invoke, c.token);
           }, lastState);
         case (Reducer.strategies.HEAD):
           // transform using the first delta queued
-          deltaMap = reducer.deltaMaps[0];
-          return resolveDelta(lastState, deltaMap, reducerFn);
+          c = reducer.calls[0];
+          return resolveDelta(lastState, c.deltaMap, reducer.$invoke, c.token);
         case (Reducer.strategies.TAIL):
           // resolve using the last delta queued
-          deltaMap = reducer.deltaMaps[(reducer.deltaMaps.length - 1)];
-          return resolveDelta(lastState, deltaMap, reducerFn);
+          last = (reducer.calls.length - 1);
+          c = reducer.calls[last];
+          return resolveDelta(lastState, c.deltaMap, reducer.$invoke, c.token);
         default:
           // use tailing strategy
-          let deltaMap = reducer.deltaMaps[(reducer.deltaMaps.length - 1)];
-          return resolveDelta(lastState, deltaMap, reducerFn);
+          last = (reducer.calls.length - 1);
+          c = reducer.calls[last];
+          return resolveDelta(lastState, c.deltaMap, reducer.$invoke, c.token);
       }
     }
 
@@ -133,7 +133,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         }
         // clear deltaMaps for the next cycle and create new immutable list
         reducerList = reducerList.update(reducer.index, (reducer) => {
-          reducer.deltaMaps = [];
+          reducer.calls = [];
           return reducer;
         });
 
@@ -154,10 +154,10 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     * @desc queue a reduce cycle on next tick
     * @private
     */
-    queueReduceCycle = function queueReduceCycle(index, deltaMap){
+    queueReduceCycle = function queueReduceCycle(actionIndex, actionToken, deltaMap){
       // update reducer hash in reducerList with deltaMap
-      reducerList = reducerList.update(index, reducer => {
-        reducer.deltaMaps.push(deltaMap);
+      reducerList = reducerList.update(actionIndex, reducer => {
+        reducer.calls.push({deltaMap: deltaMap, token: actionToken});
         return reducer;
       });
 
@@ -185,19 +185,19 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         // only add a Reducer once; a Hook can be added multiple times
         if((reducer.type === HOOK) || !_.contains(reducerList.toJS(), reducer)){
           reducerList = reducerList.push({
-            $invoke: (undoFn, lastState, deltaMap) => {
+            $invoke: (undoFn, token, lastState, deltaMap) => {
               /* maybe middleware here later */
-              return reducer.invoke(undoFn, lastState, deltaMap);
+              return reducer.invoke(undoFn, token, lastState, deltaMap);
             },
             index: index,
             strategy: strategy,
-            deltaMaps: [],
+            calls: [],
             type: reducer.type
           });
 
-
+          let handler = (payload) => queueReduceCycle(index, payload.token, payload.deltaMap);
           // kick off a reduce cycle when the reducer action is called anywhere in the app
-          let removeListener = reducer.addListener((deltaMap) => queueReduceCycle(index, deltaMap));
+          let removeListener = reducer.addListener(handler);
           // create a deregistration function to effectively remove the reducer from the reducerList
           let removeReducer = () => {
             removeListener();
@@ -429,7 +429,7 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
   */
   StateStore.getRelevantReducers = function getRelevantReducers(reducersArray){
     let index = _.reduce(reducersArray, (res, reducer, idx) => {
-      if(reducer.deltaMaps.length > 0)
+      if(reducer.calls.length > 0)
         res.push(idx);
       return res;
     },[])

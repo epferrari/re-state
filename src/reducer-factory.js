@@ -15,16 +15,20 @@ module.exports = function ReducerFactory(EventEmitter){
     var callCount = 0;
     var undos = {}
 
-    const functor = function functor(){
+    const functor = function functor(deltaMap){
       callCount++;
-      emitter.emit(REDUCE_EVENT, arguments[0]);
-      return function(cc){
-        undos[cc] && undos[cc]()
+      emitter.emit(REDUCE_EVENT, {token: callCount, deltaMap: deltaMap});
+
+      // returns a function to undo the action's effect on a state
+      return function(token){
+        undos[token] && undos[token]();
+        // uncache the undo fn
+        undos[token] = null;
       }.bind(null, callCount);
     }
 
-    const wrappedTransformer = (undoFn, lastState, deltaMap) => {
-      undos[callCount] = undoFn;
+    const wrappedTransformer = (undoFn, callToken, lastState, deltaMap) => {
+      undos[callToken] = undoFn;
       return transformer(lastState, deltaMap);
     };
 
