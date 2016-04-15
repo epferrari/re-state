@@ -113,7 +113,10 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
     }.bind(this)
 
     resolveReducer = function resolveReducer(lastState, reducer){
+      if(!reducer.calls.length) return lastState;
+
       let c, last;
+
       switch(reducer.strategy){
         case (Reducer.strategies.COMPOUND):
           // reduce down all the deltas
@@ -154,10 +157,11 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
         if(reducer.type === REDUCER){
           // run the state through the reducer
           newState = resolveReducer(state, reducer);
-        }else if(reducer.type === HOOK){
+        } else if(reducer.type === HOOK) {
           // just apply the hook to transform state
           newState = reducer.$invoke(state);
         }
+        
         // clear deltaMaps for the next cycle and create new immutable list
         $$reducers = $$reducers.update(reducer.index, (reducer) => {
           reducer.calls = [];
