@@ -5,18 +5,18 @@ import Immutable from 'immutable';
 import _ from 'lodash';
 
 
-import ReducerFactory from '../src/reducer-factory';
+import ActionFactory from '../src/action-factory';
 import HookFactory from '../src/hook-factory';
 import StateStoreFactory from '../src/store-factory';
 
 
 
 describe("State Store Factory", () => {
-  var StateStore, Reducer, Hook, store, tick;
+  var StateStore, Action, Hook, store, tick;
 
   beforeEach(() => {
     StateStore = StateStoreFactory(Immutable, EventEmitter, _);
-    Reducer = ReducerFactory(EventEmitter);
+    Action = ActionFactory(EventEmitter);
     Hook = HookFactory();
     jasmine.clock().install()
 
@@ -262,505 +262,342 @@ describe("State Store Factory", () => {
   });
 
 
-  describe("listenTo()", () => {
-    let addItem, removeItem, clearCart, updatePrice, checkout;
+  describe("transforming state through actions", () => {
+    let addItem, removeItem, itemHook, clearCart, updatePrice, checkout;
 
+    // set up some basic actions
     beforeEach(() => {
       store = new StateStore({
-        items: [],
-        priceList: {0: .25, 1: .50, 2: .75}
+        cart: [],
+        priceList: {0: .25, 1: .50, 2: .75, 3: 0}
       });
 
       spyOn(store, 'trigger');
 
-      let getItemIndex = (id, items) => {
-        return _.findIndex(items, item => {
+      let findById = (id, items) => {
+        return _.find(items, item => {
           return (item.id === id);
         });
       };
 
       let getPrice = (id) => store.state.priceList[id] || 0
 
-      addItem = new Reducer('addItem', (lastState, deltaMap) => {
-        let {items} = lastState;
-        let itemIndex = getItemIndex(deltaMap.id, items);
-        let existingItem = items[itemIndex];
+      // add item to the cart
+      addItem = new Action('addItem', (lastState, id) => {
+        let {cart} = lastState;
+        let itemInCart = findById(id, cart);
+        let itemIndex = cart.indexOf(itemInCart);
 
-        if(existingItem){
-          existingItem.qty++
-          items[itemIndex] = existingItem;
+        if(itemInCart){
+          itemInCart.qty++;
+          cart[itemIndex] = itemInCart;
         }else{
-          items.push({
-            id: deltaMap.id,
-            qty: 1
-          });
+          cart.push({ id: id, qty: 1});
         }
 
-        return {items: items};
+        return {cart: cart};
       });
 
-      removeItem = new Reducer('removeItem', (lastState, deltaMap) => {
-        let {items} = lastState;
-        let itemIndex = getItemIndex(deltaMap.id, items);
-        let item = items[itemIndex];
-        if(item){
-          item.qty--;
-          item.qty = Math.max(item.qty, 0)
-          items[itemIndex] = item;
+      // remove item from cart
+      removeItem = new Action('removeItem', (lastState, id) => {
+        let {cart} = lastState;
+        let itemInCart = findById(id, cart);
+        let itemIndex = cart.indexOf(itemInCart);
+
+        if(itemInCart){
+          itemInCart.qty--;
+          itemInCart.qty = Math.max(itemInCart.qty, 0)
+          cart[itemIndex] = itemInCart;
         }
-        return {items: items};
+        return {cart: cart};
       });
 
-      updatePrice = new Reducer('updatePrice', (lastState, deltaMap) => {
+      itemHook = new Hook('itemHook', (lastState) => {
+        let {cart} = lastState;
+        let item1 = findById(1, cart);
+        let item2 = findById(2, cart);
+        let item3 = findById(3, cart);
+
+        if(item1 && item2){
+          if(item3)
+            items[cart.indexOf(item3)].qty = item1.qty;
+          else
+            cart.push({id: 3, qty: item1.qty});
+        }
+        return {cart: cart};
+      });
+
+      updatePrice = new Action('updatePrice', (lastState, deltaMap) => {
         let {priceList} = lastState.priceList;
         priceList[deltaMap.id] = deltaMap.price;
         return {priceList: priceList};
       });
 
-      clearCart = new Reducer('clearCart', (lastState, deltaMap) => {
-        let {items} = lastState;
-        items = _.map(items, item => {
+      clearCart = new Action('clearCart', (lastState, deltaMap) => {
+        let {cart} = lastState;
+        items = _.map(cart, item => {
           item.qty = 0;
           return item;
         });
-        return {items: items};
+        return {cart: items};
       });
 
-      checkout = new Reducer('checkout', (lastState, deltaMap) => {
-        let total = lastState.items.reduce((subTotal, item) => {
+      checkout = new Action('checkout', (lastState, deltaMap) => {
+        let total = lastState.cart.reduce((subTotal, item) => {
           return subTotal + (getPrice(item.id) * item.qty);
         }, 0)
         return {total: total}
       });
     });
 
-    describe("tail strategy", () => {
-      beforeEach(() => {
-        store.listenTo(addItem, Reducer.strategies.TAIL);
-      });
-
-      it("updates the state from the last call to reducer", () => {
-        expect(store.state.items).toEqual([]);
-        addItem({id: 0});
-        addItem({id: 2});
-        addItem({id: 1});
-
-        jasmine.clock().tick(0);
-        expect(store.state.items).toEqual([{id: 1, qty: 1}]);
-
-      });
-
-      describe("undoing with tailing strategy", () => {
-        it("sets the state back to before the last action was called", () => {
-          expect(store.state.items).toEqual([]);
-          let undoAdd = addItem({id: 0});
-
-          jasmine.clock().tick(0);
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd();
-          expect(store.state.items).toEqual([]);
+    describe("through a single reducer", () => {
+      describe("using the  `TAIL` strategy (Action.strategies.TAIL)", () => {
+        beforeEach(() => {
+          store.listenTo(addItem, 'TAIL');
         });
 
-        it("does not update the state for reducer actions that were discarded by the tailing strategy", () => {
-          let undoAdd0 = addItem({id: 0});
-          let undoAdd2 = addItem({id: 2});
-          let undoAdd1 = addItem({id: 1});
+        it("updates the state from the last call to reducer", () => {
+          expect(store.state.cart).toEqual([]);
+          addItem(0);
+          addItem(2);
+          addItem(1);
 
           jasmine.clock().tick(0);
-          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+          expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+        });
+
+        describe("undoing with `TAIL` strategy", () => {
+          it("sets the state back to before the last action was called", () => {
+            expect(store.state.cart).toEqual([]);
+            let undoAdd = addItem(0);
+
+            jasmine.clock().tick(0);
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+            undoAdd();
+            expect(store.state.cart).toEqual([]);
+          });
+
+          it("does not update the state for reducer actions that were discarded by the tailing strategy", () => {
+            let undoAdd0 = addItem(0);
+            let undoAdd2 = addItem(2);
+            let undoAdd1 = addItem(1);
+
+            jasmine.clock().tick(0);
+            expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            store.trigger.calls.reset();
+
+            undoAdd0();
+            expect(store.trigger).not.toHaveBeenCalled();
+            expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+
+            undoAdd2();
+            expect(store.trigger).not.toHaveBeenCalled();
+            expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+
+            undoAdd1();
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            expect(store.state.cart).toEqual([]);
+          });
+        });
+      });
+
+      describe("using the `HEAD` strategy (Action.strategies.HEAD)", () => {
+        beforeEach(() => store.listenTo(addItem, 'HEAD'));
+
+        it("updates the state from the first call to reducer action", () => {
+          expect(store.state.cart).toEqual([]);
+          addItem(0);
+          addItem(2);
+          addItem(1);
+
+          jasmine.clock().tick(0);
+          expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+        });
+
+        describe("undoing with `HEAD` strategy", () => {
+          it("sets the state back to before the first action was called", () => {
+            expect(store.state.cart).toEqual([]);
+            let undoAdd = addItem(0);
+
+            jasmine.clock().tick(0);
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+            undoAdd();
+            expect(store.state.cart).toEqual([]);
+          });
+
+          it("does not update the state for reducer actions that were discarded by the head strategy", () => {
+            let undoAdd0 = addItem(0);
+            let undoAdd2 = addItem(2);
+            let undoAdd1 = addItem(1);
+
+            let $addItem = store.reducers[2];
+            spyOn($addItem, '$invoke').and.callThrough()
+
+            jasmine.clock().tick(0);
+
+            expect($addItem.$invoke).toHaveBeenCalledTimes(1);
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            store.trigger.calls.reset();
+
+            undoAdd1();
+            expect(store.trigger).not.toHaveBeenCalled();
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+            undoAdd2();
+            expect(store.trigger).not.toHaveBeenCalled();
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+            undoAdd0();
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            expect(store.state.cart).toEqual([]);
+          });
+        });
+      });
+
+      describe("using the `COMPOUND` strategy (Action.strategies.COMPOUND)", () => {
+        beforeEach(() => store.listenTo(addItem, 'COMPOUND'));
+
+        it("updates the state with all results of reducer action", () => {
+          expect(store.state.cart).toEqual([]);
+
+          addItem(0);
+          addItem(1);
+          addItem(2);
+          addItem(0);
+          addItem(2);
+
+          jasmine.clock().tick(0);
+
           expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
+          expect(store.state.cart.length).toEqual(3);
 
-          undoAdd0();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+          expect(store.state.cart[0]).toEqual({id: 0, qty: 2});
+          expect(store.state.cart[1]).toEqual({id: 1, qty: 1});
+          expect(store.state.cart[2]).toEqual({id: 2, qty: 2});
+        });
 
-          undoAdd2();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 1, qty: 1}]);
+        describe("undoing with `COMPOUND` strategy", () => {
+          it("resets the state to before X action was called", () => {
+            expect(store.state.cart).toEqual([]);
+            let undoAdd1 = addItem(0);
+            let undoAdd2 = addItem(0);
+            let undoAdd3 = addItem(0);
 
-          undoAdd1();
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([]);
+            jasmine.clock().tick(0);
+            expect(store.state.cart).toEqual([{id: 0, qty: 3}]);
+
+            undoAdd3();
+            expect(store.state.cart).toEqual([{id: 0, qty: 2}]);
+
+            undoAdd2();
+            expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+            undoAdd1();
+            expect(store.state.cart).toEqual([])
+          });
+
+          it("noops the undo function once it is called", () =>{
+            expect(store.state.cart).toEqual([]);
+            let undoAdd1 = addItem(0);
+
+            jasmine.clock().tick(0);
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            expect(store.state.cart).toEqual([{id:0, qty: 1}]);
+
+            undoAdd1()
+            expect(store.trigger).toHaveBeenCalledTimes(2);
+            expect(store.state.cart).toEqual([])
+
+            undoAdd1()
+            expect(store.trigger).toHaveBeenCalledTimes(2);
+          });
+
+          it("leaves rest of state transformations intact", () =>{
+            expect(store.state.cart).toEqual([]);
+            let undoAdd0 = addItem(0);
+            let undoAdd2 = addItem(2);
+            let undoAdd1 = addItem(1);
+            addItem(2);
+
+            jasmine.clock().tick(0);
+            expect(store.trigger).toHaveBeenCalledTimes(1);
+            expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 2, qty: 2}, {id: 1, qty: 1}]);
+
+            undoAdd2()
+            expect(store.trigger).toHaveBeenCalledTimes(2);
+            // notice that id:2 is now at the end. When history states were revised,
+            // 2 was pushed by the last call to addItem because it's as if the first call with id:2 never happened
+            expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
+
+            undoAdd0()
+            expect(store.trigger).toHaveBeenCalledTimes(3);
+            expect(store.state.cart).toEqual([{id: 1, qty: 1}, {id: 2, qty: 1}])
+          });
         });
       });
     });
 
-    describe("head strategy", () => {
+    describe("when multiple reducers are registered with a store", () => {
       beforeEach(() => {
-        store.listenTo(addItem, Reducer.strategies.HEAD);
+        spyOn(addItem, '$$invoke').and.callThrough()
+        spyOn(removeItem, '$$invoke').and.callThrough()
+        spyOn(itemHook, '$$invoke').and.callThrough()
+        spyOn(clearCart, '$$invoke').and.callThrough()
+        spyOn(checkout, '$$invoke').and.callThrough()
+
+        store.listenTo(addItem, 'compound')
+        store.listenTo(removeItem, 'compound')
+        store.listenTo(itemHook)
+        store.listenTo(clearCart)
+        store.listenTo(checkout)
       });
 
-      it("updates the state from the first call to reducer action", () => {
-        expect(store.state.items).toEqual([]);
-        addItem({id: 0});
-        addItem({id: 2});
-        addItem({id: 1});
+      it("invokes only the actions triggered and the hooks in each reduce cycle", () => {
+        removeItem(0)
+        removeItem(0)
+        checkout()
+
+        jasmine.clock().tick(0)
+        expect(addItem.$$invoke).not.toHaveBeenCalled()
+        expect(removeItem.$$invoke).toHaveBeenCalled()
+        expect(itemHook.$$invoke).toHaveBeenCalled()
+        expect(clearCart.$$invoke).not.toHaveBeenCalled()
+        expect(checkout.$$invoke).toHaveBeenCalled()
+      });
+
+      it("transforms state by invoking the reducers in the order they were listened to", () => {
+        checkout()
+        removeItem(1);
+        addItem(1);
+        addItem(1);
+        addItem(1);
 
         jasmine.clock().tick(0);
-        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-      });
-
-      describe("undoing with head strategy", () => {
-
-        it("sets the state back to before the first action was called", () => {
-          expect(store.state.items).toEqual([]);
-          let undoAdd = addItem({id: 0});
-
-          jasmine.clock().tick(0);
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd();
-          expect(store.state.items).toEqual([]);
-        });
-
-        it("does not update the state for reducer actions that were discarded by the head strategy", () => {
-          let undoAdd0 = addItem({id: 0});
-          let undoAdd2 = addItem({id: 2});
-          let undoAdd1 = addItem({id: 1});
-
-          let $addItem = store.reducers[2];
-          spyOn($addItem, '$invoke').and.callThrough()
-
-          jasmine.clock().tick(0);
-
-          expect($addItem.$invoke).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
-
-          undoAdd1();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd2();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd0();
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([]);
-        });
-      });
-    });
-
-    describe("compound strategy", () => {
-      beforeEach(() => {
-        store.listenTo(addItem, Reducer.strategies.COMPOUND);
-      });
-
-      it("updates the state with all results of reducer action", () => {
-        expect(store.state.items).toEqual([]);
-
-        addItem({id: 0});
-        addItem({id: 1});
-        addItem({id: 2});
-        addItem({id: 0});
-        addItem({id: 2});
-
-        jasmine.clock().tick(0);
-
-        expect(store.trigger).toHaveBeenCalledTimes(1);
-        expect(store.state.items.length).toEqual(3);
-
-        expect(store.state.items[0]).toEqual({id: 0, qty: 2});
-        expect(store.state.items[1]).toEqual({id: 1, qty: 1});
-        expect(store.state.items[2]).toEqual({id: 2, qty: 2});
-      });
-
-      describe("undoing with compound strategy", () => {
-        it("resets the state to before X action was called", () => {
-          expect(store.state.items).toEqual([]);
-          let undoAdd1 = addItem({id: 0});
-          let undoAdd2 = addItem({id: 0});
-          let undoAdd3 = addItem({id: 0});
-
-          jasmine.clock().tick(0);
-          expect(store.state.items).toEqual([{id: 0, qty: 3}]);
-
-          undoAdd3();
-          expect(store.state.items).toEqual([{id: 0, qty: 2}]);
-
-          undoAdd2();
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd1();
-          expect(store.state.items).toEqual([])
-        });
-
-        it("noops the undo function once it is called", () =>{
-          expect(store.state.items).toEqual([]);
-          let undoAdd1 = addItem({id: 0});
-
-          jasmine.clock().tick(0);
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([{id:0, qty: 1}]);
-
-          undoAdd1()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-          expect(store.state.items).toEqual([])
-
-          undoAdd1()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-        });
-
-        it("only undoes the action undone, but leaves other state intact", () =>{
-          expect(store.state.items).toEqual([]);
-          let undoAdd0 = addItem({id: 0});
-          let undoAdd2 = addItem({id: 2});
-          let undoAdd1 = addItem({id: 1});
-
-          jasmine.clock().tick(0);
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([{id:0, qty: 1}, {id: 2, qty: 1}, {id: 1, qty: 1}]);
-
-          undoAdd2()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-          expect(store.state.items).toEqual([{id:0, qty: 1}, {id: 1, qty: 1}])
-
-          undoAdd0()
-          expect(store.trigger).toHaveBeenCalledTimes(3);
-          expect(store.state.items).toEqual([{id: 1, qty: 1}])
-        });
-        /*
-        it("does not update the state for reducer actions that were discarded by the head strategy", () => {
-          let undoAdd0 = addItem({id: 0});
-          let undoAdd2 = addItem({id: 2});
-          let undoAdd1 = addItem({id: 1});
-
-          let $addItem = store.reducers[1];
-          spyOn($addItem, '$invoke').and.callThrough()
-
-          jasmine.clock().tick(0);
-
-          expect($addItem.$invoke).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
-
-          undoAdd1();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd2();
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd0();
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.items).toEqual([]);
-        });
-        */
+        expect(store.state.cart).toEqual([{id: 1, qty: 2}])
+        expect(store.state.total).toEqual(1.0);
       });
     });
   });
-/*
-    describe("undoing with head strategy", () => {
-
-      it("sets the state back to before the first action was called", () => {
-        expect(store.state.items).toEqual([]);
-        let undoAdd = addItem({id: 0});
-
-        jasmine.clock().tick(0);
-        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-        undoAdd();
-        expect(store.state.items).toEqual([]);
-      });
-
-      it("does not update the state for reducer actions that were discarded by the head strategy", () => {
-        let undoAdd0 = addItem({id: 0});
-        let undoAdd2 = addItem({id: 2});
-        let undoAdd1 = addItem({id: 1});
-
-        let $addItem = store.reducers[1];
-        spyOn($addItem, '$invoke').and.callThrough()
-
-        jasmine.clock().tick(0);
-
-        expect($addItem.$invoke).toHaveBeenCalledTimes(1);
-        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-        expect(store.trigger).toHaveBeenCalledTimes(1);
-        store.trigger.calls.reset();
-
-        undoAdd1();
-        expect(store.trigger).not.toHaveBeenCalled();
-        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-        undoAdd2();
-        expect(store.trigger).not.toHaveBeenCalled();
-        expect(store.state.items).toEqual([{id: 0, qty: 1}]);
-
-        undoAdd0();
-        expect(store.trigger).toHaveBeenCalledTimes(1);
-        expect(store.state.items).toEqual([]);
-      });
-    });
-    */
-  /*
-  describe("addListener()", () => {
-    var cb;
-    cb = void 0;
-    beforeEach(() => {
-      store = new StateStore({
-        rabbit: "Benjamin"
-      });
-      return cb = jasmine.createSpy();
-    });
-    it("calls the listener immediately with current state", () => {
-      store.addListener(cb);
-      return expect(cb).toHaveBeenCalledWith({
-        rabbit: "Benjamin"
-      });
-    });
-    return it("calls the listener when the state updates", () => {
-      store.addListener(cb);
-      cb.calls.reset();
-      store.setState({
-        ears: "floppy",
-        tail: "cotton"
-      });
-      tick();
-      return expect(cb).toHaveBeenCalledWith({
-        rabbit: "Benjamin",
-        ears: "floppy",
-        tail: "cotton"
-      });
-    });
-  });
-  describe("trigger()", () => {
-    var cb;
-    cb = void 0;
-    beforeEach(() => {
-      store = new StateStore({
-        rabbit: "Benjamin"
-      });
-      cb = jasmine.createSpy();
-      store.addListener(cb);
-      return cb.calls.reset();
-    });
-    return it("notifies listeners with the current state", () => {
-      expect(cb).not.toHaveBeenCalled();
-      store.trigger();
-      return expect(cb).toHaveBeenCalledWith({
-        rabbit: "Benjamin"
-      });
-    });
-  });
-  return describe("addReducer()", () => {
-    var storeListener;
-    storeListener = void 0;
-    beforeEach(() => {
-      store = new StateStore({
-        rabbit: "Benjamin"
-      });
-      storeListener = jasmine.createSpy();
-      store.addListener(storeListener);
-      storeListener.calls.reset();
-      return spyOn(store, 'trigger');
-    });
-    it("reduces a new state from a reducer function", () => {
-      var reducer, reducerFn;
-      reducerFn = function(lastState, newState) {
-        return {
-          rabbit: newState.rabbit
-        };
-      };
-      reducer = new Reducer(reducerFn);
-      store.addReducer(reducer);
-      reducer({
-        rabbit: "Jack"
-      });
-      tick();
-      expect(store.trigger).toHaveBeenCalledTimes(1);
-      return expect(store.state).toEqual({
-        rabbit: "Jack"
-      });
-    });
-    it("passes the current state into the reducer", () => {
-      var newState, obj, origState, reducer;
-      origState = _.clone(store.state);
-      newState = {
-        rabbit: "Bunny"
-      };
-      obj = {
-        reducerFn: function(lastState, newState) {
-          return {
-            rabbit: lastState.rabbit + " " + newState.rabbit
-          };
-        }
-      };
-      spyOn(obj, 'reducerFn').and.callThrough();
-      reducer = new Reducer(obj.reducerFn);
-      store.addReducer(reducer);
-      reducer(newState);
-      tick();
-      expect(obj.reducerFn).toHaveBeenCalledTimes(1);
-      return expect(store.state.rabbit).toEqual("Benjamin Bunny");
-    });
-    return describe("when there are multiple reducers called", () => {
-      var reducer1, reducer2, reducer3;
-      reducer1 = reducer2 = reducer3 = void 0;
-      beforeEach(() => {
-        var reducerFn1, reducerFn2, reducerFn3;
-        reducerFn1 = function(lastState, update) {
-          return {
-            rabbit: update
-          };
-        };
-        reducerFn2 = function(lastState, update) {
-          return {
-            rabbit: lastState.rabbit + " " + update.lastName
-          };
-        };
-        reducerFn3 = function(lastState, newState) {
-          return {
-            phrase: "Here comes " + lastState.rabbit
-          };
-        };
-        reducer1 = new Reducer(reducerFn1);
-        reducer2 = new Reducer(reducerFn2);
-        reducer3 = new Reducer(reducerFn3);
-        store.addReducer(reducer1);
-        store.addReducer(reducer2);
-        return store.addReducer(reducer3);
-      });
-      it("reduces a new state by multiple reducers in order the reducers were called", () => {
-        expect(store.state.rabbit).toEqual('Benjamin');
-        reducer1("Peter");
-        reducer2({
-          lastName: "Cottontail"
-        });
-        reducer3();
-        tick();
-        expect(store.state.rabbit).toEqual("Peter Cottontail");
-        return expect(store.state.phrase).toEqual("Here comes Peter Cottontail");
-      });
-      return it("only reduces state with the reducers called during each tick", () => {
-        expect(store.state.rabbit).toEqual('Benjamin');
-        reducer1("Roger");
-        tick();
-        expect(store.state.rabbit).toEqual("Roger");
-        expect(store.state.phrase).toBeUndefined();
-        reducer1("Peter");
-        reducer2({
-          lastName: "Cottontail"
-        });
-        reducer3();
-        tick();
-        expect(store.state.rabbit).toEqual("Peter Cottontail");
-        expect(store.state.phrase).toEqual("Here comes Peter Cottontail");
-        reducer1("Benjamin");
-        reducer2({
-          lastName: "Bunny"
-        });
-        tick();
-        expect(store.state.rabbit).toEqual("Benjamin Bunny");
-        return expect(store.state.phrase).toEqual("Here comes Peter Cottontail");
-      });
-    });
-  });
-  */
 });
+/*
+    xdescribe("undoing when reducers rely on each other", () => {
+      beforeEach(() => {
+        store.listenTo(addItem);
+        store.listenTo(removeItem);
+        store.listenTo(bundle3with1when2isInCart);
+        store.listenTo(checkout);
+      });
+
+      it("undoes state correctly (better it title needed!)", () => {
+        addItem(1)
+        addItem(2)
+        checkout()
+        addItem(1)
+        removeItem(2)
+      });
+    });
+*/
