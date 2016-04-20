@@ -23,7 +23,8 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 				resolveReducer,
 				queueReduceCycle,
 				executeReduceCycle,
-				undo;
+				undo,
+				rewriteHistory;
 
 		if(typeof initialState !== 'undefined' && !_.isPlainObject(initialState))
 			throw new Error(StateStore.errors.INVALID_DELTA);
@@ -46,23 +47,41 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 		getter(this, 'emitter', () => emitter );
 		getter(this,'state', () => Immutable.Map($$history[$$index].$state).toJS() );
 		getter(this, 'reducers', () => $$reducers.toJS() );
+		getter(this, 'length', () => $$history.length);
 
-		undo = function undo(index){
-			let lastHistory = $$history[index - 1];
+		undo = function undo(atIndex){
+			let originalHistory = $$history[atIndex];
+			let lastHistory = $$history[atIndex - 1];
 
-			if($$history[index].reducer_invoked == 0)
-				return // this state modification was already rendered moot
+			let redo = () => {
+				$$history[atIndex] = originalHistory;
+				rewriteHistory(atIndex + 1);
+			};
+
+			if($$history[atIndex].reducer_invoked == 0)
+				// undo was already called
+				return redo;
 
 			// duplicate the history state at cachedIndex as if action was never called
-			$$history[index] = {
+			$$history[atIndex] = {
 				reducer_invoked: 0,
 				delta: {},
 				$state: lastHistory.$state
 			}
 
 			// revise subsequent history entries according to revised state at targetIndex
+			rewriteHistory(atIndex);
+
+			// return a function to undo the undo
+			return redo;
+
+		}.bind(this);
+
+		rewriteHistory = function rewriteHistory(fromIndex){
+			let lastHistory = $$history[fromIndex - 1];
+
 			$$history
-			.slice(index)
+			.slice(fromIndex)
 			.reduce((last, curr, i) => {
 				let reducerToApply = this.reducers[curr.reducer_invoked];
 				let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.delta);
@@ -72,16 +91,16 @@ module.exports = function StateStoreFactory(Immutable, EventEmitter, _){
 					$state: last.$state.merge(revisedState)
 				}
 				// revise the entry
-				$$history[index + i] = revisedHistory;
+				$$history[fromIndex + i] = revisedHistory;
 				return revisedHistory;
 			}, lastHistory);
 
 			this.trigger();
 		}.bind(this);
 
-
 		resolveDelta = function resolveDelta(lastState, delta, reducer, callToken){
-			let resolvedState = reducer.$invoke(lastState, delta, undo.bind(this, ($$index + 1)), callToken);
+			let undoDelta = undo.bind(this, ($$index + 1));
+			let resolvedState = reducer.$invoke(lastState, delta, undoDelta, callToken);
 
 			if( !_.isPlainObject(resolvedState) ) {
 					throw new Error(StateStore.errors.INVALID_RETURN);

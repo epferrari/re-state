@@ -15,7 +15,7 @@ describe("State Store Factory", () => {
 
 	beforeEach(() => {
 		StateStore = StateStoreFactory(Immutable, EventEmitter, _);
-		Action = ActionFactory(EventEmitter);
+		Action = ActionFactory(EventEmitter, _);
 		jasmine.clock().install()
 
 		tick = (cb) => setTimeout(cb, 0);
@@ -333,8 +333,49 @@ describe("State Store Factory", () => {
 			});
 		});
 
-		describe("through a single reducer", () => {
-			describe("using the  `TAIL` strategy (Action.strategies.TAIL)", () => {
+		describe("with a single Action reducer", () => {
+			describe("using Action's returned undo/redo functions", () => {
+				beforeEach(() => {
+					store.listenTo(addItem);
+				});
+
+				it("undoes the action's effect on state", () => {
+					let undoAdd = addItem(0);
+					expect(store.trigger).not.toHaveBeenCalled()
+
+					jasmine.clock().tick(0);
+					expect(store.state.cart).toEqual([{id:0, qty:1}]);
+					expect(store.trigger).toHaveBeenCalledTimes(1)
+
+					let redoAdd = undoAdd()
+					expect(store.state.cart).toEqual([]);
+					expect(store.trigger).toHaveBeenCalledTimes(2)
+
+					let undoRedo = redoAdd()
+					expect(store.state.cart).toEqual([{id:0, qty:1}]);
+					expect(store.trigger).toHaveBeenCalledTimes(3)
+
+					undoRedo()
+					expect(store.state.cart).toEqual([]);
+					expect(store.trigger).toHaveBeenCalledTimes(4)
+				});
+
+				it("does not add or remove states from the history", () => {
+					expect(store.length).toBe(1);
+
+					let undoAdd = addItem(0);
+					jasmine.clock().tick(0);
+
+					expect(store.trigger).toHaveBeenCalledTimes(1)
+					expect(store.length).toBe(2)
+
+					let redoAdd = undoAdd()
+					expect(store.trigger).toHaveBeenCalledTimes(2)
+					expect(store.length).toBe(2)
+				})
+			});
+
+			describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
 				beforeEach(() => {
 					store.listenTo(addItem, 'TAIL');
 				});
@@ -516,9 +557,13 @@ describe("State Store Factory", () => {
 						// 2 was pushed by the last call to addItem because it's as if the first call with id:2 never happened
 						expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
 
-						undoAdd0()
+						let redoAdd0 = undoAdd0()
 						expect(store.trigger).toHaveBeenCalledTimes(3);
 						expect(store.state.cart).toEqual([{id: 1, qty: 1}, {id: 2, qty: 1}])
+
+						redoAdd0()
+						expect(store.trigger).toHaveBeenCalledTimes(4);
+						expect(store.state.cart).toEqual([{id: 0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
 					});
 				});
 			});
