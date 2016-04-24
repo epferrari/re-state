@@ -18,6 +18,13 @@ class SimpleEventEmitter {
 
 		let listener = {handler, binding: thisBinding || Object.create(null)}
 		this.listeners[event].push(listener);
+
+		// return function to remove listener
+		return () => {
+			index = this.listeners[event].indexOf(listener);
+			if(index !== -1)
+				this.listeners[event].splice(index, 1);
+		}
 	}
 }
 
