@@ -260,23 +260,54 @@ describe("State Store", () => {
 			store = new Store({rabbit: "MQ"});
 		});
 
-		it("soft reset resets the state to initial state and adds it to history stack", () => {
-			expect(store.versions).toEqual(1);
-			store.setState({rabbit: "Roger"});
-			store.setState({bunnies: ["Easter", "Bugs"]});
+		describe("soft reset", () => {
+			it("resets the state to initial state and adds it to history stack", () => {
+				expect(store.versions).toEqual(1);
+				store.setState({rabbit: "Roger"});
+				store.setState({bunnies: ["Easter", "Bugs"]});
 
-			jasmine.clock().tick(0);
-			expect(store.versions).toEqual(3);
-			expect(store.state.rabbit).toEqual('Roger');
-			expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
+				jasmine.clock().tick(0);
+				expect(store.versions).toEqual(3);
+				expect(store.state.rabbit).toEqual('Roger');
+				expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
-			store.reset();
+				store.reset();
 
-			jasmine.clock().tick(0);
-			expect(store.versions).toEqual(4);
-			expect(store.state.rabbit).toEqual("MQ");
-			expect(store.state.bunnies).toBeUndefined();
+				jasmine.clock().tick(0);
+				expect(store.versions).toEqual(4);
+				expect(store.state.rabbit).toEqual("MQ");
+				expect(store.state.bunnies).toBeUndefined();
+			});
+
+			it("recalculates state correctly with reset when a previous action is undone", () => {
+				let addThing = new Action((lastState, thing) => {
+					let things = lastState.things || [];
+					things.push(thing);
+					return {things};
+				});
+
+				store.listenTo(addThing, Action.strategies.COMPOUND);
+
+				let undoAddThingA = addThing("A");
+				addThing("B");
+				addThing("C");
+
+				jasmine.clock().tick(0);
+				expect(store.state).toEqual({rabbit: "MQ", things: ["A","B","C"]});
+
+				store.reset();
+
+				jasmine.clock().tick(0);
+				expect(store.state).toEqual({rabbit: "MQ"});
+
+				undoAddThingA();
+				expect(store.state).toEqual({rabbit: "MQ"});
+			})
+
+
 		});
+
+
 
 		it("hard resets the state to initial state and resets the history stack", () => {
 			expect(store.versions).toEqual(1);
@@ -296,6 +327,20 @@ describe("State Store", () => {
 			expect(store.state.bunnies).toBeUndefined();
 		});
 	});
+
+	describe("replaceState", () => {
+		beforeEach(() => {
+			store = new Store({rabbit: "MQ"});
+		});
+
+		it("replaces the state with a new state object", () => {
+			store.replaceState({bunny: "Bugs"});
+
+			jasmine.clock().tick(0);
+			expect(store.state.bunny).toEqual("Bugs");
+			expect(store.state.rabbit).toBeUndefined();
+		})
+	})
 
 
 	describe("getInitialState()", () =>{

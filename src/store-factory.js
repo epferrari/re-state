@@ -7,7 +7,7 @@ const EventEmitter = require('./EventEmitter');
 
 module.exports = function StoreFactory(Immutable, _){
 
-	let {isPlainObject, isFunction, isArray, merge, chain, contains} = _;
+	let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains} = _;
 
 	// events
 	const CHANGE_EVENT = 'STATE_CHANGE';
@@ -60,6 +60,7 @@ module.exports = function StoreFactory(Immutable, _){
 					queueReduceCycle,
 					executeReduceCycle,
 					undo,
+					merger,
 					rewriteHistory;
 
 			if(typeof initialState !== 'undefined' && !isPlainObject(initialState))
@@ -81,7 +82,14 @@ module.exports = function StoreFactory(Immutable, _){
 			emitter = new EventEmitter();
 
 			getter(this, 'emitter', () => emitter );
-			getter(this, 'state', () => Immutable.Map($$history[$$index].$state).toJS() );
+			getter(this, 'state', () => {
+				let state = Immutable.Map($$history[$$index].$state).toJS();
+				return reduce(state, (acc, val, key) => {
+					if(val !== undefined)
+						acc[key] = val;
+					return acc;
+				}, {});
+			});
 			getter(this, 'reducers', () => $$reducers.toJS() );
 			getter(this, 'versions', () => $$history.length);
 			getter(this, 'history', () => $$history);
@@ -115,6 +123,16 @@ module.exports = function StoreFactory(Immutable, _){
 
 			}.bind(this);
 
+			// respect "$unset" value passed to remove a value from state
+			merger = function merger(prev, next, key){
+				if(next == "$unset")
+					return undefined;
+				else if(next === undefined)
+					return prev;
+				else
+					return next;
+			};
+
 			rewriteHistory = function rewriteHistory(fromIndex){
 				let lastHistory = $$history[fromIndex - 1];
 
@@ -126,7 +144,7 @@ module.exports = function StoreFactory(Immutable, _){
 					let revisedHistory = {
 						reducer_invoked: curr.reducer_invoked,
 						delta: curr.delta,
-						$state: last.$state.merge(revisedState)
+						$state: last.$state.mergeDeepWith(merger, revisedState)
 					}
 					// revise the entry
 					$$history[fromIndex + i] = revisedHistory;
@@ -143,15 +161,7 @@ module.exports = function StoreFactory(Immutable, _){
 				if( !isPlainObject(resolvedState) ) {
 						throw new InvalidReturnError()
 				} else {
-					// respect "$unset" value passed to remove a value from state
-					let merger = (prev, next, key) => {
-						if(next == "$unset")
-							return undefined;
-						else if(next === undefined)
-							return prev;
-						else
-							return next;
-					};
+
 					// add a new state to the $$history and increment index
 					// return state to the next reducer
 					let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, resolvedState);
@@ -349,7 +359,7 @@ module.exports = function StoreFactory(Immutable, _){
 				return reduce(lastState, (acc, val, key) => {
 					acc[key] = newState[key] || "$unset";
 					return acc;
-				});
+				}, newState);
 			});
 
 			this.listenTo($replace, Action.strategies.TAIL)
@@ -390,12 +400,7 @@ module.exports = function StoreFactory(Immutable, _){
 					$$index = 0;
 				} else {
 					// soft reset, push the initial state to the end of the $$history stack
-					$$history.push({
-						reducer_invoked: 2, // replaceState
-						delta: this.getInitialState(),
-						$state: $$history[0].$state
-					});
-					$$index++;
+					$replace(this.getInitialState());
 				}
 
 				this.trigger()
