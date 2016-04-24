@@ -10,8 +10,8 @@
     * [.replaceState(newState)](#StateStore+replaceState)
     * [.reset(hard)](#StateStore+reset)
     * [.resetToState(index)](#StateStore+resetToState)
-    * [.fastForward(n)](#StateStore+fastForward)
-    * [.rewind(n)](#StateStore+rewind)
+    * [.fastForward([n])](#StateStore+fastForward)
+    * [.rewind([n])](#StateStore+rewind)
     * [.goto(index)](#StateStore+goto)
     * [.getImmutableState()](#StateStore+getImmutableState) ⇒ <code>Immutable.Map</code>
     * [.getInitialState()](#StateStore+getInitialState) ⇒ <code>object</code>
@@ -92,27 +92,27 @@ reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past in
 
 <a name="StateStore+fastForward"></a>
 
-### stateStore.fastForward(n)
+### stateStore.fastForward([n])
 move the StateStore's history index ahead `n` frames. Does not alter history.
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 **Emits**: <code>event:CHANGE_EVENT</code>  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| n | <code>int</code> | how many frames to fast froward. Cannot fast forward past the last frame. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [n] | <code>int</code> | <code>1</code> | how many frames to fast froward. Cannot fast forward past the last frame. |
 
 <a name="StateStore+rewind"></a>
 
-### stateStore.rewind(n)
+### stateStore.rewind([n])
 move the StateStore's history index back `n` frames. Does not alter history.
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 **Emits**: <code>event:CHANGE_EVENT</code>  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| n | <code>int</code> | how many frames to rewind. Cannot rewind past 0. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [n] | <code>int</code> | <code>1</code> | how many frames to rewind. Cannot rewind past 0. |
 
 <a name="StateStore+goto"></a>
 
@@ -159,10 +159,10 @@ add listener for changes to the store state
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 **Returns**: <code>function</code> - an unlisten function for the listener  
 
-| Param | Type |
-| --- | --- |
-| listener | <code>function</code> | 
-| [thisBinding] | <code>object</code> | 
+| Param | Type | Default |
+| --- | --- | --- |
+| listener | <code>function</code> |  | 
+| [thisBinding] | <code>object</code> | <code>Object.create(null)</code> | 
 
 <a name="StateStore+trigger"></a>
 

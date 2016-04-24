@@ -460,7 +460,7 @@ module.exports = function StoreFactory(Immutable, _){
 		*
 		* @name fastForward
 		* @desc move the StateStore's history index ahead `n` frames. Does not alter history.
-		* @param {int} n - how many frames to fast froward. Cannot fast forward past the last frame.
+		* @param {int} [n=1] - how many frames to fast froward. Cannot fast forward past the last frame.
 		* @method
 		* @instance
 		* @memberof StateStore
@@ -481,7 +481,7 @@ module.exports = function StoreFactory(Immutable, _){
 		*
 		* @name rewind
 		* @desc move the StateStore's history index back `n` frames. Does not alter history.
-		* @param {int} n - how many frames to rewind. Cannot rewind past 0.
+		* @param {int} [n=1] - how many frames to rewind. Cannot rewind past 0.
 		* @method
 		* @instance
 		* @memberof StateStore
@@ -509,7 +509,7 @@ module.exports = function StoreFactory(Immutable, _){
 		* @fires CHANGE_EVENT
 		*/
 			this.goto = function goto(index){
-				if(!Number.isInteger(n)){
+				if(!Number.isInteger(index)){
 					throw new InvalidIndexError();
 				} else if(index >= 0 && index <= $$history.length -1){
 					$$index = index;
@@ -566,7 +566,7 @@ module.exports = function StoreFactory(Immutable, _){
 		* @name addListener
 		* @desc add listener for changes to the store state
 		* @param {function} listener
-		* @param {object} [thisBinding]
+		* @param {object} [thisBinding=Object.create(null)]
 		* @returns {function} an unlisten function for the listener
 		* @method
 		* @instance
