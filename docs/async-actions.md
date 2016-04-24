@@ -5,11 +5,11 @@ Reducers passed into actions in restate should be synchronous, pure, and return 
 Let's take a simple example of saving a todo item, in which we add a pending state to the application while it waits for the todo to be saved on the server.
 
 
-	import {Container, Action} from 're-state';
+	import {Store, Action} from 're-state';
 
 	let todoApp, beginAddTodo, completeAddTodo, clickHandler;
 
-	todoApp = new Container({todos: [], todosPendingSave: [], pending: false})
+	todoApp = new Store({todos: [], todosPendingSave: [], pending: false})
 
 	beginAddTodo = new Action((lastState, todo) => {
 		let {todosPendingSave} = lastState
@@ -30,7 +30,7 @@ Let's take a simple example of saving a todo item, in which we add a pending sta
 		return {todos, todosPendingSave, pending: (todosPendingSave.length > 0)}
 	})
 
-	todoApp.listenToMany([beginAddTodo, completeAddTodo])
+	todoApp.listenTo([beginAddTodo, completeAddTodo])
 
 	// assume we have a Todo class that creates a todo with an id and a save method
 	clickHandler = () => {
@@ -53,11 +53,11 @@ Let's take a simple example of saving a todo item, in which we add a pending sta
 Now an example that assumes the server will respond by saving the todo, which makes our app seem faster. Remember to implement some kind of notification service to alert the user when something goes awry, otherwise the automatic undo would be confusing.
 
 
-	import {Container, Action} from 're-state';
+	import {Store, Action} from 're-state';
 
 	let todoApp, addTodo, clickHandler;
 
-	todoApp = new Container({todos: [], unsavedTodos: []})
+	todoApp = new Store({todos: [], unsavedTodos: []})
 
 	addTodo = new ReState.Action((lastState, todo) => {
 		let {todos, unsavedTodos} = lastState
