@@ -51,11 +51,11 @@ module.exports = function StoreFactory(Immutable, _){
 		}
 	}
 
-	/**
-	*
-	* @class StateStore
-	*/
 	return class StateStore {
+		/**
+		* @constructs StateStore
+		* @param {object} initialState - an initial state for your store
+		*/
 		constructor(initialState){
 			var $$history,
 					$$index,

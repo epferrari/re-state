@@ -4,6 +4,7 @@
 **Kind**: global class  
 
 * [StateStore](#StateStore)
+    * [new StateStore(initialState)](#new_StateStore_new)
     * [.listenTo(actions, strategy)](#StateStore+listenTo)
     * [.setState(deltaMap)](#StateStore+setState)
     * [.replaceState(newState)](#StateStore+replaceState)
@@ -17,6 +18,14 @@
     * [.getStateAtIndex(index)](#StateStore+getStateAtIndex) ⇒ <code>object</code>
     * [.addListener(listener, [thisBinding])](#StateStore+addListener) ⇒ <code>function</code>
     * [.trigger()](#StateStore+trigger)
+
+<a name="new_StateStore_new"></a>
+
+### new StateStore(initialState)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| initialState | <code>object</code> | an initial state for your store |
 
 <a name="StateStore+listenTo"></a>
 
