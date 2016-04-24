@@ -75,7 +75,7 @@ module.exports = function StoreFactory(Immutable, _){
 			$$history = [{
 				reducer_invoked: 0,
 				delta: {},
-				$state: Immutable.Map(initialState)
+				$state: Immutable.Map().merge(initialState)
 			}];
 
 			emitter = new EventEmitter();
@@ -83,7 +83,7 @@ module.exports = function StoreFactory(Immutable, _){
 			getter(this, 'emitter', () => emitter );
 			getter(this, 'state', () => Immutable.Map($$history[$$index].$state).toJS() );
 			getter(this, 'reducers', () => $$reducers.toJS() );
-			getter(this, 'length', () => $$history.length);
+			getter(this, 'versions', () => $$history.length);
 			getter(this, 'history', () => $$history);
 			getter(this, 'index', () => $$index);
 
@@ -144,7 +144,7 @@ module.exports = function StoreFactory(Immutable, _){
 						throw new InvalidReturnError()
 				} else {
 					// respect "$unset" value passed to remove a value from state
-					let merger = (last, next) => {
+					let merger = (prev, next, key) => {
 						if(next == "$unset")
 							return undefined;
 						else if(next === undefined)
@@ -319,22 +319,13 @@ module.exports = function StoreFactory(Immutable, _){
 			let noop = new Action('noop', (lastState) => lastState);
 			this.listenTo(noop);
 
-			// set the store's second reducer to handle direct setState operations
+			// set a second reducer to handle direct setState operations
 			let $set = new Action('setState', (lastState, deltaMap) => {
 				let newState = merge({}, lastState, deltaMap);
 				return newState;
 			});
 			this.listenTo($set, Action.strategies.COMPOUND);
 
-			// set the store's third reducer that entirely replaces the state with a new state
-			let $replace = new Action('replaceState', (lastState, newState) => {
-				return reduce(lastState, (acc, val, key) => {
-					acc[key] = newState[key] || "$unset";
-					return acc;
-				});
-			});
-
-			this.listenTo($set, Action.strategies.TAIL)
 
 			/**
 			*
@@ -351,6 +342,17 @@ module.exports = function StoreFactory(Immutable, _){
 					return $set(deltaMap);
 				}
 			};
+
+
+			// set a third reducer that entirely replaces the state with a new state
+			let $replace = new Action('replaceState', (lastState, newState) => {
+				return reduce(lastState, (acc, val, key) => {
+					acc[key] = newState[key] || "$unset";
+					return acc;
+				});
+			});
+
+			this.listenTo($replace, Action.strategies.TAIL)
 
 
 			/**
@@ -388,14 +390,18 @@ module.exports = function StoreFactory(Immutable, _){
 					$$index = 0;
 				} else {
 					// soft reset, push the initial state to the end of the $$history stack
-					$$history.push($$history[0]);
+					$$history.push({
+						reducer_invoked: 2, // replaceState
+						delta: this.getInitialState(),
+						$state: $$history[0].$state
+					});
 					$$index++;
 				}
 
 				this.trigger()
 
 				return this.state;
-			};
+			}.bind(this);
 
 			/**
 			*
