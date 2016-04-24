@@ -94,7 +94,7 @@ module.exports = function StoreFactory(Immutable, _){
 				}, {});
 			});
 			getter(this, 'reducers', () => $$reducers.toJS() );
-			getter(this, 'versions', () => $$history.length);
+			getter(this, 'previousStates', () => $$history.length);
 			getter(this, 'history', () => $$history);
 			getter(this, 'index', () => $$index);
 
@@ -102,7 +102,7 @@ module.exports = function StoreFactory(Immutable, _){
 				// ensure that the history being undone is actually the state that this action created
 				// if the history was rewound, branched, or replaced, this action no longer affects the stack
 				// and an undo could break the history tree in unpredicatable ways
-				if($$history[atIndex].guid === guid){
+				if($$history[atIndex] && $$history[atIndex].guid === guid){
 
 					let originalHistory = $$history[atIndex];
 					let lastHistory = $$history[atIndex - 1];

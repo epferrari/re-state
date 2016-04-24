@@ -256,38 +256,40 @@ describe("State Store", () => {
 	});
 
 	describe("resetting state", () => {
+		let addThing;
+
 		beforeEach(() => {
 			store = new Store({rabbit: "MQ"});
+
+			addThing = new Action((lastState, thing) => {
+				let things = lastState.things || [];
+				things.push(thing);
+				return {things};
+			});
+
+			store.listenTo(addThing, Action.strategies.COMPOUND);
 		});
 
 		describe("soft reset", () => {
 			it("resets the state to initial state and adds it to history stack", () => {
-				expect(store.versions).toEqual(1);
+				expect(store.previousStates).toEqual(1);
 				store.setState({rabbit: "Roger"});
 				store.setState({bunnies: ["Easter", "Bugs"]});
 
 				jasmine.clock().tick(0);
-				expect(store.versions).toEqual(3);
+				expect(store.previousStates).toEqual(3);
 				expect(store.state.rabbit).toEqual('Roger');
 				expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
 				store.reset();
 
 				jasmine.clock().tick(0);
-				expect(store.versions).toEqual(4);
+				expect(store.previousStates).toEqual(4);
 				expect(store.state.rabbit).toEqual("MQ");
 				expect(store.state.bunnies).toBeUndefined();
 			});
 
 			it("recalculates state correctly with reset when a previous action is undone", () => {
-				let addThing = new Action((lastState, thing) => {
-					let things = lastState.things || [];
-					things.push(thing);
-					return {things};
-				});
-
-				store.listenTo(addThing, Action.strategies.COMPOUND);
-
 				let undoAddThingA = addThing("A");
 				addThing("B");
 				addThing("C");
@@ -306,22 +308,59 @@ describe("State Store", () => {
 		});
 
 		describe("hard reset", () => {
-			it("hard resets the state to initial state and resets the history stack", () => {
-				expect(store.versions).toEqual(1);
+			it("resets the state to initial state and resets the history stack", () => {
+				expect(store.previousStates).toEqual(1);
 				store.setState({rabbit: "Roger"});
 				store.setState({bunnies: ["Easter", "Bugs"]});
 
 				jasmine.clock().tick(0);
-				expect(store.versions).toEqual(3);
+				expect(store.previousStates).toEqual(3);
 				expect(store.state.rabbit).toEqual('Roger');
 				expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
 				store.reset(true);
 
 				jasmine.clock().tick(0);
-				expect(store.versions).toEqual(1);
+				expect(store.previousStates).toEqual(1);
 				expect(store.state.rabbit).toEqual("MQ");
 				expect(store.state.bunnies).toBeUndefined();
+			});
+
+			it("nullifies undo functions returned from actions that reduced a now-deleted state history", () => {
+				spyOn(store, 'trigger');
+
+				let undoAddThingA = addThing("A"); // resolves to state 2
+				addThing("B"); // resolves to state 3
+				addThing("C"); // resolves to state 4
+
+				expect(store.previousStates).toEqual(1);
+				jasmine.clock().tick(0);
+				expect(store.previousStates).toEqual(4);
+				expect(store.state).toEqual({rabbit: "MQ", things: ["A","B","C"]});
+
+				undoAddThingA();
+				// calling undo on addThingA recalculates the state without the delta at version 2
+				expect(store.state).toEqual({rabbit: "MQ", things: ["B","C"]});
+
+				// hard reset the history, erasing state 2
+				store.reset(true);
+
+				jasmine.clock().tick(0);
+				expect(store.previousStates).toEqual(1);
+				expect(store.state).toEqual({rabbit: "MQ"});
+
+				store.setState({bunny: "Bugs"}); // resolves to new state 2
+
+				jasmine.clock().tick(0);
+				expect(store.previousStates).toEqual(2);
+				expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
+
+				store.trigger.calls.reset();
+				undoAddThingA();
+
+				expect(store.trigger).not.toHaveBeenCalled();
+				// state 2 was not affected by the undo function that used to point there
+				expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
 			});
 		});
 	});
@@ -458,17 +497,17 @@ describe("State Store", () => {
 				});
 
 				it("does not add or remove states from the history", () => {
-					expect(store.versions).toBe(1);
+					expect(store.previousStates).toBe(1);
 
 					let undoAdd = addItem(0);
 					jasmine.clock().tick(0);
 
 					expect(store.trigger).toHaveBeenCalledTimes(1)
-					expect(store.versions).toBe(2)
+					expect(store.previousStates).toBe(2)
 
 					let redoAdd = undoAdd()
 					expect(store.trigger).toHaveBeenCalledTimes(2)
-					expect(store.versions).toBe(2)
+					expect(store.previousStates).toBe(2)
 				})
 			});
 
