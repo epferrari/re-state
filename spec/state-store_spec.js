@@ -1,32 +1,26 @@
 "use-strict";
 
-import EventEmitter from 'events';
 import Immutable from 'immutable';
 import _ from 'lodash';
 
+import restate from '../src/restate';
 
-import ActionFactory from '../src/action-factory';
-import StateStoreFactory from '../src/store-factory';
+const {Store, Action} = restate(Immutable, _);
 
 
-
-describe("State Store Factory", () => {
-	var StateStore, Action, store, tick;
+describe("State Store", () => {
+	var store, tick;
 
 	beforeEach(() => {
-		StateStore = StateStoreFactory(Immutable, EventEmitter, _);
-		Action = ActionFactory(EventEmitter, _);
 		jasmine.clock().install()
-
 		tick = (cb) => setTimeout(cb, 0);
-
 	});
 
 	afterEach(jasmine.clock().uninstall)
 
 	describe("constructor", () => {
 		it("initializes with an `immutable` state", () => {
-			store = new StateStore({
+			store = new Store({
 				rabbit: "MQ"
 			});
 			expect(() => {
@@ -38,7 +32,7 @@ describe("State Store Factory", () => {
 		});
 
 		it("initializes with an `immutable` emitter property", () => {
-			store = new StateStore();
+			store = new Store();
 			expect(store.emitter).toBeDefined();
 			expect(() => {
 				return store.emitter = true;
@@ -46,26 +40,26 @@ describe("State Store Factory", () => {
 		});
 
 		it("initializes with an immutable `reducers` property", () => {
-			store = new StateStore();
+			store = new Store();
 			expect(store.reducers).toBeDefined();
 			expect( () => { store.reducers = []} ).toThrow();
 		});
 
 		it("adds 2 initials reducer, a noop and a setState reducer",() => {
-			store = new StateStore();
+			store = new Store();
 			expect(store.reducers.length).toEqual(2);
 		});
 
 		describe("when called with no arguments", () => {
 			it("initializes an empty state object", () => {
-				store = new StateStore();
+				store = new Store();
 				expect(store.state).toEqual({});
 			});
 		});
 
 		describe("when called with an object argument", () => {
 			it("initializes with an initial state", () => {
-				store = new StateStore({
+				store = new Store({
 					rabbit: "MQ"
 				});
 				return expect(store.state).toEqual({
@@ -77,9 +71,9 @@ describe("State Store Factory", () => {
 		describe("when initialized with a non-object initial state", () => {
 			it("throws an error", () => {
 				let storeCreator = () => {
-					return new StateStore("Roger Rabbit");
+					return new Store("Roger Rabbit");
 				};
-				expect(storeCreator).toThrow(new Error(StateStore.errors.INVALID_DELTA) );
+				expect(storeCreator).toThrow( new Store.errors.INVALID_DELTA() );
 			});
 		});
 	});
@@ -87,7 +81,7 @@ describe("State Store Factory", () => {
 	describe("setState()", () => {
 		var stateSetter;
 		beforeEach(() => {
-			store = new StateStore();
+			store = new Store();
 			stateSetter = store.reducers[1];
 			spyOn(stateSetter, '$invoke').and.callThrough();
 
@@ -115,25 +109,25 @@ describe("State Store Factory", () => {
 					store.setState("egg basket");
 					jasmine.clock().tick(0)
 				};
-				expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+				expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
 
 				setter = () => {
 					store.setState(1);
 					jasmine.clock().tick(0)
 				};
-				expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+				expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
 
 				setter = () => {
 					store.setState(true);
 					jasmine.clock().tick(0)
 				};
-				expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+				expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
 
 				setter = () => {
 					store.setState(() => true)
 					jasmine.clock().tick(0)
 				}
-				expect(setter).toThrow(new Error(StateStore.errors.INVALID_DELTA));
+				expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
 			});
 		});
 
@@ -197,7 +191,7 @@ describe("State Store Factory", () => {
 						state: "VA"
 					}};
 
-				store = new StateStore( {rabbits: [rabbit1, rabbit2]} );
+				store = new Store( {rabbits: [rabbit1, rabbit2]} );
 			});
 
 			it("changes the nested state and calls trigger", () => {
@@ -245,7 +239,7 @@ describe("State Store Factory", () => {
 
 	describe("getInitialState()", () =>{
 		beforeEach(() =>{
-			store = new StateStore({rabbit: "MQ"});
+			store = new Store({rabbit: "MQ"});
 		});
 
 		it("returns the initial data state", () =>{
@@ -265,7 +259,7 @@ describe("State Store Factory", () => {
 
 		// set up some basic actions
 		beforeEach(() => {
-			store = new StateStore({
+			store = new Store({
 				cart: [],
 				priceList: {0: .25, 1: .50, 2: .75, 3: 0}
 			});
