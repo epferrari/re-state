@@ -18,6 +18,7 @@
   "author": "Ethan Ferrari <ethan@ethanferrari.com>",
   "license": "MIT",
   "dependencies": {
+    "chance": "^1.0.2",
     "immutable": "^3.7.6"
   },
   "devDependencies": {

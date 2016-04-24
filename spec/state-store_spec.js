@@ -302,29 +302,27 @@ describe("State Store", () => {
 
 				undoAddThingA();
 				expect(store.state).toEqual({rabbit: "MQ"});
-			})
-
-
+			});
 		});
 
+		describe("hard reset", () => {
+			it("hard resets the state to initial state and resets the history stack", () => {
+				expect(store.versions).toEqual(1);
+				store.setState({rabbit: "Roger"});
+				store.setState({bunnies: ["Easter", "Bugs"]});
 
+				jasmine.clock().tick(0);
+				expect(store.versions).toEqual(3);
+				expect(store.state.rabbit).toEqual('Roger');
+				expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
-		it("hard resets the state to initial state and resets the history stack", () => {
-			expect(store.versions).toEqual(1);
-			store.setState({rabbit: "Roger"});
-			store.setState({bunnies: ["Easter", "Bugs"]});
+				store.reset(true);
 
-			jasmine.clock().tick(0);
-			expect(store.versions).toEqual(3);
-			expect(store.state.rabbit).toEqual('Roger');
-			expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
-
-			store.reset(true);
-
-			jasmine.clock().tick(0);
-			expect(store.versions).toEqual(1);
-			expect(store.state.rabbit).toEqual("MQ");
-			expect(store.state.bunnies).toBeUndefined();
+				jasmine.clock().tick(0);
+				expect(store.versions).toEqual(1);
+				expect(store.state.rabbit).toEqual("MQ");
+				expect(store.state.bunnies).toBeUndefined();
+			});
 		});
 	});
 
@@ -337,10 +335,9 @@ describe("State Store", () => {
 			store.replaceState({bunny: "Bugs"});
 
 			jasmine.clock().tick(0);
-			expect(store.state.bunny).toEqual("Bugs");
-			expect(store.state.rabbit).toBeUndefined();
-		})
-	})
+			expect(store.state).toEqual({bunny: "Bugs"});
+		});
+	});
 
 
 	describe("getInitialState()", () =>{

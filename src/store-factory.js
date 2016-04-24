@@ -5,6 +5,8 @@ const {getter, defineProperty} = require('./utils');
 const {ACTION} = require('./constants');
 const EventEmitter = require('./EventEmitter');
 
+var chance = require('chance').Chance();
+
 module.exports = function StoreFactory(Immutable, _){
 
 	let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains} = _;
@@ -76,7 +78,8 @@ module.exports = function StoreFactory(Immutable, _){
 			$$history = [{
 				reducer_invoked: 0,
 				delta: {},
-				$state: Immutable.Map().merge(initialState)
+				$state: Immutable.Map().merge(initialState),
+				guid: chance.guid()
 			}];
 
 			emitter = new EventEmitter();
@@ -95,31 +98,41 @@ module.exports = function StoreFactory(Immutable, _){
 			getter(this, 'history', () => $$history);
 			getter(this, 'index', () => $$index);
 
-			undo = function undo(atIndex){
-				let originalHistory = $$history[atIndex];
-				let lastHistory = $$history[atIndex - 1];
+			undo = function undo(atIndex, guid){
+				// ensure that the history being undone is actually the state that this action created
+				// if the history was rewound, branched, or replaced, this action no longer affects the stack
+				// and an undo could break the history tree in unpredicatable ways
+				if($$history[atIndex].guid === guid){
 
-				let redo = () => {
-					$$history[atIndex] = originalHistory;
-					rewriteHistory(atIndex + 1);
-				};
+					let originalHistory = $$history[atIndex];
+					let lastHistory = $$history[atIndex - 1];
 
-				if($$history[atIndex].reducer_invoked == 0)
-					// undo was already called
+					let redo = () => {
+						$$history[atIndex] = originalHistory;
+						rewriteHistory(atIndex + 1);
+					};
+
+					if($$history[atIndex].reducer_invoked == 0)
+						// undo was already called
+						return redo;
+
+					// duplicate the history state at cachedIndex as if action was never called
+					$$history[atIndex] = {
+						reducer_invoked: 0,
+						delta: {},
+						$state: lastHistory.$state,
+						guid: originalHistory.guid
+					}
+
+					// revise subsequent history entries according to revised state at targetIndex
+					rewriteHistory(atIndex);
+
+					// return a function to undo the undo
 					return redo;
-
-				// duplicate the history state at cachedIndex as if action was never called
-				$$history[atIndex] = {
-					reducer_invoked: 0,
-					delta: {},
-					$state: lastHistory.$state
+				} else {
+					// return a no-op;
+					return () => {};
 				}
-
-				// revise subsequent history entries according to revised state at targetIndex
-				rewriteHistory(atIndex);
-
-				// return a function to undo the undo
-				return redo;
 
 			}.bind(this);
 
@@ -144,7 +157,8 @@ module.exports = function StoreFactory(Immutable, _){
 					let revisedHistory = {
 						reducer_invoked: curr.reducer_invoked,
 						delta: curr.delta,
-						$state: last.$state.mergeDeepWith(merger, revisedState)
+						$state: last.$state.mergeDeepWith(merger, revisedState),
+						guid: curr.guid
 					}
 					// revise the entry
 					$$history[fromIndex + i] = revisedHistory;
@@ -155,7 +169,8 @@ module.exports = function StoreFactory(Immutable, _){
 			}.bind(this);
 
 			resolveDelta = function resolveDelta(lastState, delta, reducer, callToken){
-				let undoDelta = undo.bind(this, ($$index + 1));
+				let guid = chance.guid();
+				let undoDelta = undo.bind(this, ($$index + 1), guid);
 				let resolvedState = reducer.$invoke(lastState, delta, undoDelta, callToken);
 
 				if( !isPlainObject(resolvedState) ) {
@@ -172,7 +187,8 @@ module.exports = function StoreFactory(Immutable, _){
 						$$history.push({
 							reducer_invoked: reducer.index,
 							delta: delta,
-							$state: newImmutableState
+							$state: newImmutableState,
+							guid: guid
 						});
 						// update the pointer to new state in $$history
 						$$index++;
