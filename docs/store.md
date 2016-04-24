@@ -30,7 +30,7 @@
 <a name="StateStore+listenTo"></a>
 
 ### stateStore.listenTo(actions, strategy)
-execute a reduce cycle when this function is called with a deltaMap
+execute a reduce cycle when the action is called
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 

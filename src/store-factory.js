@@ -327,7 +327,7 @@ module.exports = function StoreFactory(Immutable, _){
 		*   Object definitions and plain actions can be combined in the same array:
 		*   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]`
 		* @param {string} strategy - one of `'compound'`, `'lead'`, or `'tail'`
-		* @desc execute a reduce cycle when this function is called with a deltaMap
+		* @desc execute a reduce cycle when the action is called
 		* @method
 		* @instance
 		* @memberof StateStore
