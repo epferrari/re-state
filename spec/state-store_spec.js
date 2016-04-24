@@ -255,6 +255,48 @@ describe("State Store", () => {
 		});
 	});
 
+	describe("resetting state", () => {
+		beforeEach(() => {
+			store = new Store({rabbit: "MQ"});
+		});
+
+		it("soft reset resets the state to initial state and adds it to history stack", () => {
+			expect(store.versions).toEqual(1);
+			store.setState({rabbit: "Roger"});
+			store.setState({bunnies: ["Easter", "Bugs"]});
+
+			jasmine.clock().tick(0);
+			expect(store.versions).toEqual(3);
+			expect(store.state.rabbit).toEqual('Roger');
+			expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
+
+			store.reset();
+
+			jasmine.clock().tick(0);
+			expect(store.versions).toEqual(4);
+			expect(store.state.rabbit).toEqual("MQ");
+			expect(store.state.bunnies).toBeUndefined();
+		});
+
+		it("hard resets the state to initial state and resets the history stack", () => {
+			expect(store.versions).toEqual(1);
+			store.setState({rabbit: "Roger"});
+			store.setState({bunnies: ["Easter", "Bugs"]});
+
+			jasmine.clock().tick(0);
+			expect(store.versions).toEqual(3);
+			expect(store.state.rabbit).toEqual('Roger');
+			expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
+
+			store.reset(true);
+
+			jasmine.clock().tick(0);
+			expect(store.versions).toEqual(1);
+			expect(store.state.rabbit).toEqual("MQ");
+			expect(store.state.bunnies).toBeUndefined();
+		});
+	});
+
 
 	describe("getInitialState()", () =>{
 		beforeEach(() =>{
@@ -374,17 +416,17 @@ describe("State Store", () => {
 				});
 
 				it("does not add or remove states from the history", () => {
-					expect(store.length).toBe(1);
+					expect(store.versions).toBe(1);
 
 					let undoAdd = addItem(0);
 					jasmine.clock().tick(0);
 
 					expect(store.trigger).toHaveBeenCalledTimes(1)
-					expect(store.length).toBe(2)
+					expect(store.versions).toBe(2)
 
 					let redoAdd = undoAdd()
 					expect(store.trigger).toHaveBeenCalledTimes(2)
-					expect(store.length).toBe(2)
+					expect(store.versions).toBe(2)
 				})
 			});
 
