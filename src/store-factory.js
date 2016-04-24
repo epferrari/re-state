@@ -7,6 +7,8 @@ const EventEmitter = require('./EventEmitter');
 
 module.exports = function StoreFactory(Immutable, _){
 
+	let {isPlainObject, isFunction, isArray, merge, chain, contains} = _;
+
 	// events
 	const CHANGE_EVENT = 'STATE_CHANGE';
 	const SET_EVENT = 'SET_INVOKED';
@@ -60,7 +62,7 @@ module.exports = function StoreFactory(Immutable, _){
 					undo,
 					rewriteHistory;
 
-			if(typeof initialState !== 'undefined' && !_.isPlainObject(initialState))
+			if(typeof initialState !== 'undefined' && !isPlainObject(initialState))
 				throw new InvalidDeltaError();
 
 			// pointer to current state of $$history
@@ -138,12 +140,21 @@ module.exports = function StoreFactory(Immutable, _){
 				let undoDelta = undo.bind(this, ($$index + 1));
 				let resolvedState = reducer.$invoke(lastState, delta, undoDelta, callToken);
 
-				if( !_.isPlainObject(resolvedState) ) {
+				if( !isPlainObject(resolvedState) ) {
 						throw new InvalidReturnError()
 				} else {
+					// respect "$unset" value passed to remove a value from state
+					let merger = (last, next) => {
+						if(next == "$unset")
+							return undefined;
+						else if(next === undefined)
+							return prev;
+						else
+							return next;
+					};
 					// add a new state to the $$history and increment index
 					// return state to the next reducer
-					let newImmutableState = $$history[$$index].$state.merge(resolvedState);
+					let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, resolvedState);
 
 					if(!Immutable.is($$history[$$index].$state, newImmutableState)){
 						$$history = $$history.slice(0, $$index + 1);
@@ -161,29 +172,27 @@ module.exports = function StoreFactory(Immutable, _){
 			}.bind(this)
 
 			resolveReducer = function resolveReducer(lastState, reducer){
-				//if(!reducer.calls.length) return lastState;
-
 				let c, last;
 
 				switch((reducer.strategy || "").toLowerCase()){
 					case (Action.strategies.COMPOUND.toLowerCase()):
 						// reduce down all the deltas
-						return reducer.calls.reduce((state, c) => {
+						return reducer.requests.reduce((state, c) => {
 							return resolveDelta(state, c.delta, reducer, c.token);
 						}, lastState);
 					case (Action.strategies.HEAD.toLowerCase()):
 						// transform using the first delta queued
-						c = reducer.calls[0];
+						c = reducer.requests[0];
 						return resolveDelta(lastState, c.delta, reducer, c.token);
 					case (Action.strategies.TAIL.toLowerCase()):
 						// resolve using the last delta queued
-						last = (reducer.calls.length - 1);
-						c = reducer.calls[last];
+						last = (reducer.requests.length - 1);
+						c = reducer.requests[last];
 						return resolveDelta(lastState, c.delta, reducer, c.token);
 					default:
 						// use tailing strategy
-						last = (reducer.calls.length - 1);
-						c = reducer.calls[last];
+						last = (reducer.requests.length - 1);
+						c = reducer.requests[last];
 						return resolveDelta(lastState, c.delta, reducer, c.token);
 				}
 			}
@@ -197,9 +206,8 @@ module.exports = function StoreFactory(Immutable, _){
 			executeReduceCycle = function executeReduceCycle(previousState){
 				this.emitter.emit(REDUCE_EVENT);
 				let initialIndex = $$index;
-				let maybeNewState = _($$reducers.toJS())
-					.chain()
-					.filter(reducer => reducer.calls.length)
+				let maybeNewState = chain($$reducers.toJS())
+					.filter(reducer => reducer.requests.length)
 					.sortBy(reducer => reducer.index)
 					.reduce((state, reducer) => {
 
@@ -208,12 +216,12 @@ module.exports = function StoreFactory(Immutable, _){
 
 						// clear deltaMaps for the next cycle and create new immutable list
 						$$reducers = $$reducers.update(reducer.index, r => {
-							r.calls = [];
+							r.requests = [];
 							return r;
 						});
 
 						return newState;
-					}, _.merge({}, previousState) )
+					}, merge({}, previousState) )
 					.value();
 
 				// notify on change
@@ -233,7 +241,7 @@ module.exports = function StoreFactory(Immutable, _){
 			queueReduceCycle = function queueReduceCycle(index, token, delta){
 				// update reducer hash in $$reducers with deltaMap
 				$$reducers = $$reducers.update(index, reducer => {
-					reducer.calls.push({delta: delta, token: token});
+					reducer.requests.push({delta: delta, token: token});
 					return reducer;
 				});
 
@@ -259,11 +267,11 @@ module.exports = function StoreFactory(Immutable, _){
 						},
 						index: index,
 						strategy: strategy,
-						calls: []
+						requests: []
 					};
 
 					// only add each Action once
-					if(!_.contains($$reducers.toJS(), reducer)){
+					if(!contains($$reducers.toJS(), reducer)){
 						$$reducers = $$reducers.push(reducer);
 
 						// kick off a reduce cycle when the reducer action is called anywhere in the app
@@ -291,60 +299,90 @@ module.exports = function StoreFactory(Immutable, _){
 			* @desc execute a reduce cycle when this function is called with a deltaMap
 			*/
 			this.listenTo = function listenTo(actions, strategy){
-				if(_.isFunction(actions)){
+				if(isFunction(actions)){
 					return listenToAction(actions, strategy);
-				} else if(_.isArray(actions)){
+				} else if(isArray(actions)){
 					return actions.reduce((acc, action) => {
-						if(_.isFunction(action)){
+						if(isFunction(action)){
 							// [<Action>, <Action>, ...]
 							acc[action.$$name] = listenToAction(action);
-						} else if(_.isPlainObject(action)){
+						} else if(isPlainObject(action)){
 							// [{action: <Action>[,strategy: <strategy>], ...}]
 							acc[action.action.$$name] = listenToAction(action.action, action.strategy);
 						}
 						return acc;
-					},{});
+					}, {});
 				}
 			}.bind(this);
 
-			// set the store's 0 index reducer as a noop
-			let noop = new Action('no-op', (lastState) => lastState);
-			this.listenTo(noop)
+			// set the store's first reducer as a noop
+			let noop = new Action('noop', (lastState) => lastState);
+			this.listenTo(noop);
 
 			// set the store's second reducer to handle direct setState operations
-			let stateSetter = new Action('setState', (lastState, deltaMap) => {
-				let newState = _.merge({}, lastState, deltaMap);
+			let $set = new Action('setState', (lastState, deltaMap) => {
+				let newState = merge({}, lastState, deltaMap);
 				return newState;
 			});
-			this.listenTo(stateSetter, Action.strategies.COMPOUND);
+			this.listenTo($set, Action.strategies.COMPOUND);
+
+			// set the store's third reducer that entirely replaces the state with a new state
+			let $replace = new Action('replaceState', (lastState, newState) => {
+				return reduce(lastState, (acc, val, key) => {
+					acc[key] = newState[key] || "$unset";
+					return acc;
+				});
+			});
+
+			this.listenTo($set, Action.strategies.TAIL)
 
 			/**
 			*
 			* @name setState
-			* @desc Reduce an updated state on the next tick with a plain object. Emits `SET_STATE` event
-			* @param {object} deltaMap - a state deltaMap to be reduced against and eventually merged into state
+			* @desc Reduce an updated state on the next tick by merging a plain object.
+			* @param {object} deltaMap - a plain object of properties to be merged into state
 			* @instance
 			* @memberof StateStore
 			*/
 			this.setState = function setState(deltaMap){
-				if(!_.isPlainObject(deltaMap)){
+				if(!isPlainObject(deltaMap)){
 					throw new InvalidDeltaError();
 				} else {
-					return stateSetter(deltaMap);
+					return $set(deltaMap);
+				}
+			};
+
+
+			/**
+			*
+			* @name replaceState
+			* @desc replace the current state with a new state. Be aware that reducers coming after may expect properties
+			*   that no longer exist on the state you replace with. Best to keep them the same shape.
+			* @param {object} deltaMap - a plain object of properties to be merged into state
+			* @instance
+			* @memberof StateStore
+			*/
+			this.replaceState = function replaceState(newState){
+				if(!isPlainObject(newState)){
+					throw new InvalidDeltaError();
+				} else {
+					return $replace(newState);
 				}
 			};
 
 			/**
 			*
 			* @name reset
-			* @desc Reset the app to it's original state. Triggers a change event
-			* @param {boolean} force - delete state $$history
+			* @desc Reset the app to it's original state. A hard reset will delete the state history, set the
+			*   index to 0, and trigger with initial state. A soft reset will add a new entry to the end of
+			*   history as initial state.
+			* @param {boolean} hard - DESTRUCTIVE! delete entire history and start over at history[0]
 			* @instance
 			* @memberof StateStore
 			* @returns {object} state
 			*/
-			this.reset = function reset(force){
-				if(force === true){
+			this.reset = function reset(hard){
+				if(hard === true){
 					// hard reset, clears the entire $$history stack, no previous histories are saved
 					$$history = [$$history[0]];
 					$$index = 0;
@@ -359,7 +397,16 @@ module.exports = function StoreFactory(Immutable, _){
 				return this.state;
 			};
 
-			this.resetToIndex = function resetTo(index){
+			/**
+			*
+			* @name resetToState
+			* @desc reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past index, triggers change event.
+			* @param {int} index - what state to move the history to
+			* @instance
+			* @memberof StateStore
+			* @returns `<StateStore>.state`
+			*/
+			this.resetToState = function resetToState(index){
 				if(!Number.isInteger(index)){
 					throw new InvalidIndexError();
 				} else if(index >= 0 && index <= $$history.length -1){
@@ -370,6 +417,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
+			/**
+			*
+			* @name fastForward
+			* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
+			* @param {int} n - how many frames to fast froward. Cannot fast forward past the last frame.
+			* @instance
+			* @memberof StateStore
+			* @returns `<StateStore>.state`
+			*/
 			this.fastForward = function fastForward(n){
 				if(n !== undefined && !Number.isInteger(n)){
 					throw new InvalidIndexError();
@@ -382,6 +438,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
+			/**
+			*
+			* @name rewind
+			* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
+			* @param {int} n - how many frames to rewind. Cannot rewind past 0.
+			* @instance
+			* @memberof StateStore
+			* @returns `<StateStore>.state`
+			*/
 			this.rewind = function rewind(n){
 				if(n !== undefined && !Number.isInteger(n)){
 					throw new InvalidIndexError();
@@ -394,6 +459,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
+			/**
+			*
+			* @name goto
+			* @desc move the StateStore's history index to `index`. Does not alter history, triggers change event.
+			* @param {int} index - the index to move to
+			* @instance
+			* @memberof StateStore
+			* @returns `<StateStore>.state`
+			*/
 			this.goto = function goto(index){
 				if(!Number.isInteger(n)){
 					throw new InvalidIndexError();
