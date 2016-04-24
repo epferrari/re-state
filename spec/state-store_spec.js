@@ -45,9 +45,9 @@ describe("State Store", () => {
 			expect( () => { store.reducers = []} ).toThrow();
 		});
 
-		it("adds 2 initials reducer, a noop and a setState reducer",() => {
+		it("adds 3 initial reducers, a noop and a setState, and a replaceState reducer",() => {
 			store = new Store();
-			expect(store.reducers.length).toEqual(2);
+			expect(store.reducers.length).toEqual(3);
 		});
 
 		describe("when called with no arguments", () => {
@@ -181,9 +181,8 @@ describe("State Store", () => {
 			beforeEach(() => {
 				rabbit1 = {
 					name: "Peter Cottontail",
-					home: {
-						city: "McGregor's garden"
-					}};
+					home: {city: "McGregor's garden"}
+				};
 				rabbit2 = {
 					name: "Frank",
 					home: {
@@ -232,6 +231,26 @@ describe("State Store", () => {
 				let newStateRabbit1 = store.state.rabbits[0];
 				expect(newStateRabbit1.home.state).toBe("Connecticut");
 				expect(newStateRabbit1.home.city).toBe("Hartford");
+			});
+
+			it("unsets a value with the '$unset' keyword", () => {
+				expect(store.state.rabbits).toEqual([rabbit1, rabbit2]);
+				store.setState({rabbits: "$unset"});
+
+				jasmine.clock().tick(0);
+				expect(store.state.rabbits).toBeUndefined();
+			});
+
+			it("unsets deeply", () => {
+				expect(store.state.rabbits).toEqual([rabbit1, rabbit2]);
+				expect(store.state.rabbits[0].home).toEqual({city: "McGregor's garden"})
+
+				let rabbit1_b = _.merge({}, rabbit1);
+				rabbit1_b.home = "$unset";
+				store.setState({rabbits: [rabbit1_b, rabbit2]});
+
+				jasmine.clock().tick(0);
+				expect(store.state.rabbits[0].home).toBeUndefined();
 			});
 		});
 	});
@@ -451,7 +470,7 @@ describe("State Store", () => {
 						let undoAdd2 = addItem(2);
 						let undoAdd1 = addItem(1);
 
-						let $addItem = store.reducers[2];
+						let $addItem = store.reducers[3];
 						spyOn($addItem, '$invoke').and.callThrough()
 
 						jasmine.clock().tick(0);
