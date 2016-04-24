@@ -1,1 +1,1 @@
-module.exports = require('./restate')(require('immutable'), require('events'), require('lodash'));
+module.exports = require('./restate')(require('immutable'), require('lodash'));
