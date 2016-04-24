@@ -85,6 +85,10 @@ module.exports = function StoreFactory(Immutable, _){
 			emitter = new EventEmitter();
 
 			getter(this, 'emitter', () => emitter );
+			getter(this, 'reducers', () => $$reducers.toJS() );
+			getter(this, 'previousStates', () => $$history.length);
+			getter(this, 'history', () => $$history);
+			getter(this, 'index', () => $$index);
 			getter(this, 'state', () => {
 				let state = Immutable.Map($$history[$$index].$state).toJS();
 				return reduce(state, (acc, val, key) => {
@@ -93,10 +97,6 @@ module.exports = function StoreFactory(Immutable, _){
 					return acc;
 				}, {});
 			});
-			getter(this, 'reducers', () => $$reducers.toJS() );
-			getter(this, 'previousStates', () => $$history.length);
-			getter(this, 'history', () => $$history);
-			getter(this, 'index', () => $$index);
 
 			// respect "$unset" value passed to remove a value from state
 			merger = function merger(prev, next, key){
@@ -276,8 +276,8 @@ module.exports = function StoreFactory(Immutable, _){
 				if(!reducePending){
 					reducePending = true;
 					setTimeout(() => {
-						reducePending = false;
 						executeReduceCycle(this.state);
+						reducePending = false;
 					}, 0);
 				}
 			}.bind(this);
@@ -315,16 +315,16 @@ module.exports = function StoreFactory(Immutable, _){
 			}.bind(this);
 
 
-			/**
-			*
-			* @name listenTo
-			* @param {function, array} actions - created with `new Restate.Action(<reducer_function>)`
-			*   If passed an array, strategies can be defined like so: [{action: <Action>[, strategy: <strategy>]}].
-			*   Object definitions and plain actions can be combined in the same array:
-			*   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]`
-			* @param {string} strategy - one of ['compound', 'lead', 'tail']
-			* @desc execute a reduce cycle when this function is called with a deltaMap
-			*/
+		/**
+		*
+		* @name listenTo
+		* @param {function, array} actions - created with `new Restate.Action(<reducer_function>)`
+		*   If passed an array, strategies can be defined like so: [{action: <Action>[, strategy: <strategy>]}].
+		*   Object definitions and plain actions can be combined in the same array:
+		*   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]`
+		* @param {string} strategy - one of ['compound', 'lead', 'tail']
+		* @desc execute a reduce cycle when this function is called with a deltaMap
+		*/
 			this.listenTo = function listenTo(actions, strategy){
 				if(isFunction(actions)){
 					return listenToAction(actions, strategy);
@@ -354,14 +354,14 @@ module.exports = function StoreFactory(Immutable, _){
 			this.listenTo($set, Action.strategies.COMPOUND);
 
 
-			/**
-			*
-			* @name setState
-			* @desc Reduce an updated state on the next tick by merging a plain object.
-			* @param {object} deltaMap - a plain object of properties to be merged into state
-			* @instance
-			* @memberof StateStore
-			*/
+		/**
+		*
+		* @name setState
+		* @desc Reduce an updated state on the next tick by merging a plain object.
+		* @param {object} deltaMap - a plain object of properties to be merged into state
+		* @instance
+		* @memberof StateStore
+		*/
 			this.setState = function setState(deltaMap){
 				if(!isPlainObject(deltaMap)){
 					throw new InvalidDeltaError();
@@ -382,15 +382,15 @@ module.exports = function StoreFactory(Immutable, _){
 			this.listenTo($replace, Action.strategies.TAIL)
 
 
-			/**
-			*
-			* @name replaceState
-			* @desc replace the current state with a new state. Be aware that reducers coming after may expect properties
-			*   that no longer exist on the state you replace with. Best to keep them the same shape.
-			* @param {object} deltaMap - a plain object of properties to be merged into state
-			* @instance
-			* @memberof StateStore
-			*/
+		/**
+		*
+		* @name replaceState
+		* @desc replace the current state with a new state. Be aware that reducers coming after may expect properties
+		*   that no longer exist on the state you replace with. Best to keep them the same shape.
+		* @param {object} deltaMap - a plain object of properties to be merged into state
+		* @instance
+		* @memberof StateStore
+		*/
 			this.replaceState = function replaceState(newState){
 				if(!isPlainObject(newState)){
 					throw new InvalidDeltaError();
@@ -399,17 +399,17 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			};
 
-			/**
-			*
-			* @name reset
-			* @desc Reset the app to it's original state. A hard reset will delete the state history, set the
-			*   index to 0, and trigger with initial state. A soft reset will add a new entry to the end of
-			*   history as initial state.
-			* @param {boolean} hard - DESTRUCTIVE! delete entire history and start over at history[0]
-			* @instance
-			* @memberof StateStore
-			* @returns {object} state
-			*/
+		/**
+		*
+		* @name reset
+		* @desc Reset the app to it's original state. A hard reset will delete the state history, set the
+		*   index to 0, and trigger with initial state. A soft reset will add a new entry to the end of
+		*   history as initial state.
+		* @param {boolean} hard - DESTRUCTIVE! delete entire history and start over at history[0]
+		* @instance
+		* @memberof StateStore
+		* @returns {object} state
+		*/
 			this.reset = function reset(hard){
 				if(hard === true){
 					// hard reset, clears the entire $$history stack, no previous histories are saved
@@ -425,15 +425,15 @@ module.exports = function StoreFactory(Immutable, _){
 				return this.state;
 			}.bind(this);
 
-			/**
-			*
-			* @name resetToState
-			* @desc reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past index, triggers change event.
-			* @param {int} index - what state to move the history to
-			* @instance
-			* @memberof StateStore
-			* @returns `<StateStore>.state`
-			*/
+		/**
+		*
+		* @name resetToState
+		* @desc reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past index, triggers change event.
+		* @param {int} index - what state to move the history to
+		* @instance
+		* @memberof StateStore
+		* @returns `<StateStore>.state`
+		*/
 			this.resetToState = function resetToState(index){
 				if(!Number.isInteger(index)){
 					throw new InvalidIndexError();
@@ -445,15 +445,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
-			/**
-			*
-			* @name fastForward
-			* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
-			* @param {int} n - how many frames to fast froward. Cannot fast forward past the last frame.
-			* @instance
-			* @memberof StateStore
-			* @returns `<StateStore>.state`
-			*/
+		/**
+		*
+		* @name fastForward
+		* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
+		* @param {int} n - how many frames to fast froward. Cannot fast forward past the last frame.
+		* @instance
+		* @memberof StateStore
+		* @returns `<StateStore>.state`
+		*/
 			this.fastForward = function fastForward(n){
 				if(n !== undefined && !Number.isInteger(n)){
 					throw new InvalidIndexError();
@@ -466,15 +466,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
-			/**
-			*
-			* @name rewind
-			* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
-			* @param {int} n - how many frames to rewind. Cannot rewind past 0.
-			* @instance
-			* @memberof StateStore
-			* @returns `<StateStore>.state`
-			*/
+		/**
+		*
+		* @name rewind
+		* @desc move the StateStore's history index back `n` frames. Does not alter history, triggers change event.
+		* @param {int} n - how many frames to rewind. Cannot rewind past 0.
+		* @instance
+		* @memberof StateStore
+		* @returns `<StateStore>.state`
+		*/
 			this.rewind = function rewind(n){
 				if(n !== undefined && !Number.isInteger(n)){
 					throw new InvalidIndexError();
@@ -487,15 +487,15 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 			}.bind(this);
 
-			/**
-			*
-			* @name goto
-			* @desc move the StateStore's history index to `index`. Does not alter history, triggers change event.
-			* @param {int} index - the index to move to
-			* @instance
-			* @memberof StateStore
-			* @returns `<StateStore>.state`
-			*/
+		/**
+		*
+		* @name goto
+		* @desc move the StateStore's history index to `index`. Does not alter history, triggers change event.
+		* @param {int} index - the index to move to
+		* @instance
+		* @memberof StateStore
+		* @returns `<StateStore>.state`
+		*/
 			this.goto = function goto(index){
 				if(!Number.isInteger(n)){
 					throw new InvalidIndexError();
