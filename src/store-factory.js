@@ -98,6 +98,17 @@ module.exports = function StoreFactory(Immutable, _){
 			getter(this, 'history', () => $$history);
 			getter(this, 'index', () => $$index);
 
+			// respect "$unset" value passed to remove a value from state
+			merger = function merger(prev, next, key){
+				if(next == "$unset")
+					return undefined;
+				else if(next === undefined)
+					return prev;
+				else
+					return next;
+			};
+
+
 			undo = function undo(atIndex, guid){
 				// ensure that the history being undone is actually the state that this action created
 				// if the history was rewound, branched, or replaced, this action no longer affects the stack
@@ -135,16 +146,6 @@ module.exports = function StoreFactory(Immutable, _){
 				}
 
 			}.bind(this);
-
-			// respect "$unset" value passed to remove a value from state
-			merger = function merger(prev, next, key){
-				if(next == "$unset")
-					return undefined;
-				else if(next === undefined)
-					return prev;
-				else
-					return next;
-			};
 
 			rewriteHistory = function rewriteHistory(fromIndex){
 				let lastHistory = $$history[fromIndex - 1];

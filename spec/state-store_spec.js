@@ -78,7 +78,7 @@ describe("State Store", () => {
 		});
 	});
 
-	describe("setState()", () => {
+	describe("setState(delta)", () => {
 		var stateSetter;
 		beforeEach(() => {
 			store = new Store();
@@ -255,7 +255,20 @@ describe("State Store", () => {
 		});
 	});
 
-	describe("resetting state", () => {
+	describe("replaceState(newState)", () => {
+		beforeEach(() => {
+			store = new Store({rabbit: "MQ"});
+		});
+
+		it("replaces the state with a new state object", () => {
+			store.replaceState({bunny: "Bugs"});
+
+			jasmine.clock().tick(0);
+			expect(store.state).toEqual({bunny: "Bugs"});
+		});
+	});
+
+	describe("reset()", () => {
 		let addThing;
 
 		beforeEach(() => {
@@ -365,17 +378,29 @@ describe("State Store", () => {
 		});
 	});
 
-	describe("replaceState", () => {
-		beforeEach(() => {
-			store = new Store({rabbit: "MQ"});
-		});
 
-		it("replaces the state with a new state object", () => {
-			store.replaceState({bunny: "Bugs"});
+	describe("resetToState(index)", () => {
 
-			jasmine.clock().tick(0);
-			expect(store.state).toEqual({bunny: "Bugs"});
-		});
+	});
+
+
+	describe("fastForward(n)", () => {
+
+	});
+
+
+	describe("rewind(n)", () => {
+
+	});
+
+
+	describe("goto(index)", () => {
+
+	});
+
+
+	describe("getImmutableState()", () => {
+
 	});
 
 
@@ -393,6 +418,21 @@ describe("State Store", () => {
 			expect(store.state.rabbit).toBe("Roger");
 			expect(store.getInitialState()).toEqual({rabbit: "MQ"});
 		});
+	});
+
+
+	describe("getStateAtIndex(index)", () => {
+
+	});
+
+
+	describe("addListener(listener, thisBinding)", () => {
+
+	});
+
+
+	describe("trigger()", () => {
+
 	});
 
 
@@ -744,21 +784,3 @@ describe("State Store", () => {
 		});
 	});
 });
-/*
-		xdescribe("undoing when reducers rely on each other", () => {
-			beforeEach(() => {
-				store.listenTo(addItem);
-				store.listenTo(removeItem);
-				store.listenTo(bundle3with1when2isInCart);
-				store.listenTo(checkout);
-			});
-
-			it("undoes state correctly (better it title needed!)", () => {
-				addItem(1)
-				addItem(2)
-				checkout()
-				addItem(1)
-				removeItem(2)
-			});
-		});
-*/
