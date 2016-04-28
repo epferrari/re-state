@@ -252,25 +252,18 @@ module.exports = function StoreFactory(Immutable, _){
 						// reduce down all the deltas
 						return reducer.requests.reduce((state, r) => {
 							return resolveDelta(state, r.delta, reducer, r.token);
-							//return applyMiddleware(reducer.name, resolver)(r.delta);
 						}, lastState);
 					case (Action.strategies.HEAD.toLowerCase()):
 						// transform using the first delta queued
 						req = reducer.requests[0];
-						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
-						//return applyMiddleware(reducer.name, resolver)(req.delta);
 						return resolveDelta(lastState, req.delta, reducer, req.token);
 					case (Action.strategies.TAIL.toLowerCase()):
 						// resolve using the last delta queued
 						req = reducer.requests.pop();
-						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
-						//return applyMiddleware(reducer.name, resolver)(req.delta);
 						return resolveDelta(lastState, req.delta, reducer, req.token);
 					default:
 						// use tailing strategy
 						req = reducer.requests.pop();
-						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
-						//return applyMiddleware(reducer.name, resolver)(req.delta);
 						return resolveDelta(lastState, req.delta, reducer, req.token);
 				}
 			};
