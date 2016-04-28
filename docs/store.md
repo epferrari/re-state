@@ -4,14 +4,14 @@
 **Kind**: global class  
 
 * [StateStore](#StateStore)
-    * [new StateStore(initialState)](#new_StateStore_new)
-    * [.listenTo(actions, strategy)](#StateStore+listenTo)
+    * [new StateStore(initialState, [middleware])](#new_StateStore_new)
+    * [.listenTo(action, [strategy])](#StateStore+listenTo)
     * [.setState(deltaMap)](#StateStore+setState)
     * [.replaceState(newState)](#StateStore+replaceState)
     * [.reset(hard)](#StateStore+reset)
     * [.resetToState(index)](#StateStore+resetToState)
-    * [.fastForward([n])](#StateStore+fastForward)
-    * [.rewind([n])](#StateStore+rewind)
+    * [.fastForward(n)](#StateStore+fastForward)
+    * [.rewind(n)](#StateStore+rewind)
     * [.goto(index)](#StateStore+goto)
     * [.getImmutableState()](#StateStore+getImmutableState) ⇒ <code>Immutable.Map</code>
     * [.getInitialState()](#StateStore+getInitialState) ⇒ <code>object</code>
@@ -21,23 +21,24 @@
 
 <a name="new_StateStore_new"></a>
 
-### new StateStore(initialState)
+### new StateStore(initialState, [middleware])
 
-| Param | Type | Description |
-| --- | --- | --- |
-| initialState | <code>object</code> | an initial state for your store |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| initialState | <code>object</code> | <code>{}</code> | an initial state for your store |
+| [middleware] | <code>array</code> | <code>[]</code> | an array of middleware functions to apply during state transitions |
 
 <a name="StateStore+listenTo"></a>
 
-### stateStore.listenTo(actions, strategy)
+### stateStore.listenTo(action, [strategy])
 execute a reduce cycle when the action is called
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| actions | <code>function</code> &#124; <code>array</code> | created with `new Restate.Action(<reducer_function>)`   If passed an array, strategies can be defined like so: `[{action: <Action>[, strategy: <strategy>]}]`.   Object definitions and plain actions can be combined in the same array:   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]` |
-| strategy | <code>string</code> | one of `'compound'`, `'lead'`, or `'tail'` |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| action | <code>function</code> &#124; <code>array</code> |  | created with `new Restate.Action(<reducer_function>)`   If passed an array, strategies can be defined like so: `[{action: <Action>[, strategy: <strategy>]}]`.   Object definitions and plain actions can be combined in the same array:   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]` |
+| [strategy] | <code>string</code> | <code>&quot;tail&quot;</code> | one of `'compound'`, `'lead'`, or `'tail'` |
 
 <a name="StateStore+setState"></a>
 
@@ -74,9 +75,9 @@ Reset the app to it's original state. A hard reset will delete the state history
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
 **Emits**: <code>event:CHANGE_EVENT</code>  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| hard | <code>boolean</code> | DESTRUCTIVE! delete entire history and start over at history[0] |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| hard | <code>boolean</code> | <code>false</code> | DESTRUCTIVE! delete entire history and start over at history[0] |
 
 <a name="StateStore+resetToState"></a>
 
@@ -92,7 +93,7 @@ reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past in
 
 <a name="StateStore+fastForward"></a>
 
-### stateStore.fastForward([n])
+### stateStore.fastForward(n)
 move the StateStore's history index ahead `n` frames. Does not alter history.
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
@@ -100,11 +101,11 @@ move the StateStore's history index ahead `n` frames. Does not alter history.
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [n] | <code>int</code> | <code>1</code> | how many frames to fast froward. Cannot fast forward past the last frame. |
+| n | <code>int</code> | <code>1</code> | how many frames to fast froward. Cannot fast forward past the last frame. |
 
 <a name="StateStore+rewind"></a>
 
-### stateStore.rewind([n])
+### stateStore.rewind(n)
 move the StateStore's history index back `n` frames. Does not alter history.
 
 **Kind**: instance method of <code>[StateStore](#StateStore)</code>  
@@ -112,7 +113,7 @@ move the StateStore's history index back `n` frames. Does not alter history.
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| [n] | <code>int</code> | <code>1</code> | how many frames to rewind. Cannot rewind past 0. |
+| n | <code>int</code> | <code>1</code> | how many frames to rewind. Cannot rewind past 0. |
 
 <a name="StateStore+goto"></a>
 

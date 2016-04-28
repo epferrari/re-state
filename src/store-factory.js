@@ -54,7 +54,8 @@ module.exports = function StoreFactory(Immutable, _){
 	return class StateStore {
 		/**
 		* @constructs StateStore
-		* @param {object} initialState - an initial state for your store
+		* @param {object} initialState={} - an initial state for your store
+		* @param {array} [middleware=[]] - an array of middleware functions to apply during state transitions
 		*/
 		constructor(initialState, middleware){
 			var $$history,
@@ -371,27 +372,27 @@ module.exports = function StoreFactory(Immutable, _){
 		/**
 		*
 		* @name listenTo
-		* @param {function | array} actions - created with `new Restate.Action(<reducer_function>)`
+		* @param {function | array} action - created with `new Restate.Action(<reducer_function>)`
 		*   If passed an array, strategies can be defined like so: `[{action: <Action>[, strategy: <strategy>]}]`.
 		*   Object definitions and plain actions can be combined in the same array:
 		*   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]`
-		* @param {string} strategy - one of `'compound'`, `'lead'`, or `'tail'`
+		* @param {string} [strategy=tail] - one of `'compound'`, `'lead'`, or `'tail'`
 		* @desc execute a reduce cycle when the action is called
 		* @method
 		* @instance
 		* @memberof StateStore
 		*/
-			this.listenTo = function listenTo(actions, strategy){
-				if(isFunction(actions)){
-					return listenToAction(actions, strategy);
-				} else if(isArray(actions)){
-					return actions.reduce((acc, action) => {
-						if(isFunction(action)){
+			this.listenTo = function listenTo(action, strategy){
+				if(isFunction(action)){
+					return listenToAction(action, strategy);
+				} else if(isArray(action)){
+					return action.reduce((acc, a) => {
+						if(isFunction(a)){
 							// [<Action>, <Action>, ...]
-							acc[action.$$name] = listenToAction(action);
-						} else if(isPlainObject(action)){
+							acc[a.$$name] = listenToAction(a);
+						} else if(isPlainObject(a)){
 							// [{action: <Action>[,strategy: <strategy>], ...}]
-							acc[action.action.$$name] = listenToAction(action.action, action.strategy);
+							acc[a.action.$$name] = listenToAction(a.action, a.strategy);
 						}
 						return acc;
 					}, {});
@@ -466,7 +467,7 @@ module.exports = function StoreFactory(Immutable, _){
 		* @desc Reset the app to it's original state. A hard reset will delete the state history, set the
 		*   index to 0, and trigger with initial state. A soft reset will add a new entry to the end of
 		*   history as initial state.
-		* @param {boolean} hard - DESTRUCTIVE! delete entire history and start over at history[0]
+		* @param {boolean} hard=false - DESTRUCTIVE! delete entire history and start over at history[0]
 		* @method
 		* @instance
 		* @memberof StateStore
@@ -509,7 +510,7 @@ module.exports = function StoreFactory(Immutable, _){
 		*
 		* @name fastForward
 		* @desc move the StateStore's history index ahead `n` frames. Does not alter history.
-		* @param {int} [n=1] - how many frames to fast froward. Cannot fast forward past the last frame.
+		* @param {int} n=1 - how many frames to fast froward. Cannot fast forward past the last frame.
 		* @method
 		* @instance
 		* @memberof StateStore
@@ -530,7 +531,7 @@ module.exports = function StoreFactory(Immutable, _){
 		*
 		* @name rewind
 		* @desc move the StateStore's history index back `n` frames. Does not alter history.
-		* @param {int} [n=1] - how many frames to rewind. Cannot rewind past 0.
+		* @param {int} n=1 - how many frames to rewind. Cannot rewind past 0.
 		* @method
 		* @instance
 		* @memberof StateStore
