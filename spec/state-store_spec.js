@@ -255,6 +255,143 @@ describe("State Store", () => {
 		});
 	});
 
+
+	describe("middleware", () => {
+		let middleware, addItem, addExtraProp, badAction, caughtExceptions, log, callOrder;
+
+		beforeEach(() => {
+			caughtExceptions = [];
+			log = [];
+			callOrder = [];
+
+			middleware = {
+				handleException: (next) => {
+					callOrder.push('handleException')
+
+					try {
+						return next();
+					} catch(ex){
+						caughtExceptions.push(ex);
+					}
+				},
+				prune: (next) => {
+					callOrder.push('prune')
+
+					return _.pick(next(), ['cart', 'total']);
+				},
+				log: (next, action, payload, lastState) => {
+					callOrder.push('log');
+
+					log.push({
+						action: action,
+						payload: payload,
+						lastState: lastState
+					})
+					return next();
+				},
+				calculateTotal: (next, action, payload, lastState) => {
+					callOrder.push('calculateTotal');
+
+					let prices = {
+						"01": 0.50,
+						"02": 0.75,
+						"03": 1.25
+					};
+					let delta = next();
+					let {cart} = delta;
+
+					if(cart){
+						delta.total = cart.reduce((total, item) => {
+							return total + (item.qty * prices[item.id]);
+						}, 0);
+					}
+					return delta;
+				}
+			};
+
+			spyOn(middleware, 'prune').and.callThrough()
+			spyOn(middleware, 'log').and.callThrough()
+			spyOn(middleware, 'handleException').and.callThrough()
+			spyOn(middleware, 'calculateTotal').and.callThrough()
+
+			addItem = new Action('addItem', (lastState, id) => {
+				let {cart} = lastState;
+				let itemIndex = _.findIndex(cart, (item) => item.id === id);
+
+				if(itemIndex !== -1)
+					cart[itemIndex].qty++;
+				else
+					cart.push({id, qty: 1});
+
+				return {cart};
+			});
+
+			addExtraProp = new Action('addExtraProp', (lastState, delta) => {
+				return delta;
+			});
+
+			badAction = new Action('badAction', (lastState, id) => {
+				return "elephant";
+			});
+
+			store = new Store({cart: [], total: 0}, [
+				middleware.handleException,
+				middleware.log,
+				middleware.prune,
+				middleware.calculateTotal
+			]);
+
+			store.listenTo([{action: addItem, strategy: 'compound'}, addExtraProp, badAction]);
+		});
+
+		it("is called in the order it was added to the store", () => {
+			addItem("01")
+
+			jasmine.clock().tick(0);
+
+			expect(callOrder).toEqual(["handleException", "log", "prune", "calculateTotal"])
+		});
+
+		it("gets called for every action that will update state history", () => {
+			addItem("01")
+			addItem("01")
+			addItem("03")
+
+			jasmine.clock().tick(0);
+
+			expect(store.state).toEqual({
+				cart:
+				[
+					{id: "01", qty: 2},
+					{id: "03", qty: 1}
+				],
+				total: 2.25
+			});
+		});
+
+		it("operates on the new state before it gets merged into history", () => {
+			addExtraProp({something: 'else'});
+
+			jasmine.clock().tick(0)
+			// expecting that the key 'something' got pruned before adding to history state
+			expect(store.state.something).toBeUndefined()
+		});
+
+		it("can catch an error", () => {
+			spyOn(store, 'trigger');
+			expect(caughtExceptions.length).toEqual(0);
+
+			// returns a string instead of a delta oject
+			badAction();
+			store.trigger.calls.reset();
+
+			jasmine.clock().tick(0);
+
+			expect(caughtExceptions.length).toEqual(1)
+			expect(store.trigger).not.toHaveBeenCalled()
+		})
+	});
+
 	describe("replaceState(newState)", () => {
 		beforeEach(() => {
 			store = new Store({rabbit: "MQ"});
@@ -290,6 +427,7 @@ describe("State Store", () => {
 				store.setState({bunnies: ["Easter", "Bugs"]});
 
 				jasmine.clock().tick(0);
+
 				expect(store.previousStates).toEqual(3);
 				expect(store.state.rabbit).toEqual('Roger');
 				expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
@@ -297,6 +435,7 @@ describe("State Store", () => {
 				store.reset();
 
 				jasmine.clock().tick(0);
+
 				expect(store.previousStates).toEqual(4);
 				expect(store.state.rabbit).toEqual("MQ");
 				expect(store.state.bunnies).toBeUndefined();

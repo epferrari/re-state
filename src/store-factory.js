@@ -56,15 +56,17 @@ module.exports = function StoreFactory(Immutable, _){
 		* @constructs StateStore
 		* @param {object} initialState - an initial state for your store
 		*/
-		constructor(initialState){
+		constructor(initialState, middleware){
 			var $$history,
 					$$index,
 					$$reducers,
+					$$middleware,
 					emitter,
-					resolveDelta,
-					resolveReducer,
 					queueReduceCycle,
 					executeReduceCycle,
+					resolveReducer,
+					resolveDelta,
+					applyMiddleware,
 					undo,
 					merger,
 					rewriteHistory;
@@ -86,7 +88,11 @@ module.exports = function StoreFactory(Immutable, _){
 				guid: chance.guid()
 			}];
 
+			$$middleware = _.isArray(middleware) ? middleware : [];
+
 			emitter = new EventEmitter();
+
+
 
 			getter(this, 'emitter', () => emitter );
 			getter(this, 'reducers', () => $$reducers.toJS() );
@@ -102,6 +108,8 @@ module.exports = function StoreFactory(Immutable, _){
 				}, {});
 			});
 
+
+
 			// respect "$unset" value passed to remove a value from state
 			merger = function merger(prev, next, key){
 				if(next == "$unset")
@@ -111,6 +119,7 @@ module.exports = function StoreFactory(Immutable, _){
 				else
 					return next;
 			};
+
 
 
 			undo = function undo(atIndex, guid){
@@ -151,6 +160,8 @@ module.exports = function StoreFactory(Immutable, _){
 
 			}.bind(this);
 
+
+
 			rewriteHistory = function rewriteHistory(fromIndex){
 				let lastHistory = $$history[fromIndex - 1];
 
@@ -173,60 +184,96 @@ module.exports = function StoreFactory(Immutable, _){
 				this.trigger();
 			}.bind(this);
 
+
+
+			applyMiddleware = function applyMiddleware(actionName, actionInvoke){
+				if($$middleware.length)
+					return $$middleware.map(m => m).reverse().reduce((next, fn) => {
+						return (delta) => {
+							let resolvedVal = undefined;
+							let nextResolver = () => {
+								// ensure that next is only called once!
+								if(!resolvedVal)
+									resolvedVal = next(delta);
+								return resolvedVal;
+							};
+							return fn(nextResolver, actionName, delta, this.state);
+						};
+					}, actionInvoke);
+				else
+					return actionInvoke;
+			}.bind(this);
+
+
+
 			resolveDelta = function resolveDelta(lastState, delta, reducer, callToken){
 				let guid = chance.guid();
 				let undoDelta = undo.bind(this, ($$index + 1), guid);
-				let resolvedState = reducer.$invoke(lastState, delta, undoDelta, callToken);
 
-				if( !isPlainObject(resolvedState) ) {
-						throw new InvalidReturnError()
-				} else {
+				let resolver = (d) => {
+					let resolvedState = reducer.$invoke(lastState, d, undoDelta, callToken);
 
-					// add a new state to the $$history and increment index
-					// return state to the next reducer
-					let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, resolvedState);
-
-					if(!Immutable.is($$history[$$index].$state, newImmutableState)){
-						$$history = $$history.slice(0, $$index + 1);
-						// add new entry to history
-						$$history.push({
-							reducer_invoked: reducer.index,
-							delta: delta,
-							$state: newImmutableState,
-							guid: guid
-						});
-						// update the pointer to new state in $$history
-						$$index++;
+					if( !isPlainObject(resolvedState) ) {
+						throw new InvalidReturnError();
+					} else {
+						return resolvedState;
 					}
-					return resolvedState;
 				}
-			}.bind(this)
+
+				let newState = applyMiddleware(reducer.name, resolver)(delta);
+
+				// add a new state to the $$history and increment index
+				// return state to the next reducer
+				let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, newState);
+
+				if(!Immutable.is($$history[$$index].$state, newImmutableState)){
+					$$history = $$history.slice(0, $$index + 1);
+					// add new entry to history
+					$$history.push({
+						reducer_invoked: reducer.index,
+						delta: delta,
+						$state: newImmutableState,
+						guid: guid
+					});
+					// update the pointer to new state in $$history
+					$$index++;
+				}
+				return newState;
+			}.bind(this);
+
+
 
 			resolveReducer = function resolveReducer(lastState, reducer){
-				let c, last;
+				let req, resolver;
 
 				switch((reducer.strategy || "").toLowerCase()){
 					case (Action.strategies.COMPOUND.toLowerCase()):
 						// reduce down all the deltas
-						return reducer.requests.reduce((state, c) => {
-							return resolveDelta(state, c.delta, reducer, c.token);
+						return reducer.requests.reduce((state, r) => {
+							return resolveDelta(state, r.delta, reducer, r.token);
+							//return applyMiddleware(reducer.name, resolver)(r.delta);
 						}, lastState);
 					case (Action.strategies.HEAD.toLowerCase()):
 						// transform using the first delta queued
-						c = reducer.requests[0];
-						return resolveDelta(lastState, c.delta, reducer, c.token);
+						req = reducer.requests[0];
+						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
+						//return applyMiddleware(reducer.name, resolver)(req.delta);
+						return resolveDelta(lastState, req.delta, reducer, req.token);
 					case (Action.strategies.TAIL.toLowerCase()):
 						// resolve using the last delta queued
-						last = (reducer.requests.length - 1);
-						c = reducer.requests[last];
-						return resolveDelta(lastState, c.delta, reducer, c.token);
+						req = reducer.requests.pop();
+						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
+						//return applyMiddleware(reducer.name, resolver)(req.delta);
+						return resolveDelta(lastState, req.delta, reducer, req.token);
 					default:
 						// use tailing strategy
-						last = (reducer.requests.length - 1);
-						c = reducer.requests[last];
-						return resolveDelta(lastState, c.delta, reducer, c.token);
+						req = reducer.requests.pop();
+						//resolver = (delta) => resolveDelta(lastState, delta, reducer, req.token);
+						//return applyMiddleware(reducer.name, resolver)(req.delta);
+						return resolveDelta(lastState, req.delta, reducer, req.token);
 				}
-			}
+			};
+
 
 
 			/**
@@ -287,11 +334,13 @@ module.exports = function StoreFactory(Immutable, _){
 			}.bind(this);
 
 
+
 			let listenToAction = function listenToAction(action, strategy){
 				if((action.$$type == ACTION)){
 					let index = $$reducers.size;
 
 					let reducer = {
+						name: action.$$name,
 						$invoke: (lastState, delta, undoFn, token) => {
 							/* maybe middleware here later */
 							return action.$$invoke(lastState, delta, undoFn, token);
