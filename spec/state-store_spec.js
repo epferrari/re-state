@@ -257,8 +257,9 @@ describe("State Store", () => {
 
 
 	describe("middleware", () => {
-		let middleware, addItem, addExtraProp, badAction, caughtExceptions, log, callOrder;
+		let middleware, addItem, addExtraProps, caughtExceptions, log, callOrder;
 
+		// set up middleware
 		beforeEach(() => {
 			caughtExceptions = [];
 			log = [];
@@ -273,6 +274,7 @@ describe("State Store", () => {
 					} catch(ex){
 						caughtExceptions.push(ex);
 					}
+
 				},
 				prune: (next) => {
 					callOrder.push('prune')
@@ -313,7 +315,10 @@ describe("State Store", () => {
 			spyOn(middleware, 'log').and.callThrough()
 			spyOn(middleware, 'handleException').and.callThrough()
 			spyOn(middleware, 'calculateTotal').and.callThrough()
+		});
 
+		// create some actions
+		beforeEach( () => {
 			addItem = new Action('addItem', (lastState, id) => {
 				let {cart} = lastState;
 				let itemIndex = _.findIndex(cart, (item) => item.id === id);
@@ -326,28 +331,35 @@ describe("State Store", () => {
 				return {cart};
 			});
 
-			addExtraProp = new Action('addExtraProp', (lastState, delta) => {
-				return delta;
+			addExtraProps = new Action('addExtraProps', (lastState, payload) => {
+				return payload;
 			});
-
-			badAction = new Action('badAction', (lastState, id) => {
-				return "elephant";
-			});
-
-			store = new Store({cart: [], total: 0}, [
-				middleware.handleException,
-				middleware.log,
-				middleware.prune,
-				middleware.calculateTotal
-			]);
-
-			store.listenTo([{action: addItem, strategy: 'compound'}, addExtraProp, badAction]);
 		});
 
-		it("is called in the order it was added to the store", () => {
+		// set up store with middleware and listening to actions
+		beforeEach(() => {
+			let {handleException, log, prune, calculateTotal} = middleware;
+			store = new Store(
+				{cart: [], total: 0},
+				[handleException, log, prune, calculateTotal]
+			);
+
+			store.listenTo([
+				{action: addItem, strategy: 'compound'},
+				addExtraProps
+			]);
+		});
+
+
+		it("is called in the order the middleware was added to the store", () => {
 			addItem("01")
 
 			jasmine.clock().tick(0);
+
+			expect(middleware.handleException).toHaveBeenCalled()
+			expect(middleware.log).toHaveBeenCalled()
+			expect(middleware.prune).toHaveBeenCalled()
+			expect(middleware.calculateTotal).toHaveBeenCalled()
 
 			expect(callOrder).toEqual(["handleException", "log", "prune", "calculateTotal"])
 		});
@@ -359,6 +371,7 @@ describe("State Store", () => {
 
 			jasmine.clock().tick(0);
 
+			// the calculateTotal middleware will be called on every action before the state is set
 			expect(store.state).toEqual({
 				cart:
 				[
@@ -370,26 +383,70 @@ describe("State Store", () => {
 		});
 
 		it("operates on the new state before it gets merged into history", () => {
-			addExtraProp({something: 'else'});
+			addExtraProps({something: 'else'});
 
 			jasmine.clock().tick(0)
 			// expecting that the key 'something' got pruned before adding to history state
 			expect(store.state.something).toBeUndefined()
 		});
 
-		it("can catch an error", () => {
-			spyOn(store, 'trigger');
-			expect(caughtExceptions.length).toEqual(0);
+		describe("handling exceptions with middleware", () => {
+			beforeEach(() => {
+				spyOn(store, 'trigger');
+				store.trigger.calls.reset();
+				expect(caughtExceptions.length).toEqual(0);
+			});
 
-			// returns a string instead of a delta oject
-			badAction();
-			store.trigger.calls.reset();
+			it("can catch errors thrown inside actions", () => {
+				let actionThatThrows = new Action('actionThatThrows', (lastState, payload) => {
+					throw new Error('something went awry')
+				});
 
-			jasmine.clock().tick(0);
+				store.listenTo(actionThatThrows)
+				actionThatThrows()
 
-			expect(caughtExceptions.length).toEqual(1)
-			expect(store.trigger).not.toHaveBeenCalled()
-		})
+				jasmine.clock().tick(0)
+				expect(caughtExceptions.length).toEqual(1)
+				expect(store.trigger).not.toHaveBeenCalled()
+			});
+
+			it("can catch an error raised by a poorly written action which doesn't return an object literal", () => {
+				// returns a string instead of a delta oject
+				let poorlyWrittenAction = new Action('poorlyWrittenAction', (lastState, id) => {
+					return "elephant";
+				});
+
+				store.listenTo(poorlyWrittenAction)
+
+				poorlyWrittenAction();
+				jasmine.clock().tick(0);
+
+				expect(caughtExceptions.length).toEqual(1)
+				expect(store.trigger).not.toHaveBeenCalled()
+			});
+
+			it("can catch an error raised by a poorly written middleware downstream", () => {
+				middleware.poorlyWrittenMiddleware = (next) => {
+					next()
+					return "not an object literal";
+				}
+
+				let {handleException, poorlyWrittenMiddleware} = middleware;
+				let otherStore = new Store({cart: [], total: 0}, [handleException, poorlyWrittenMiddleware])
+
+				otherStore.listenTo(addItem);
+
+				spyOn(otherStore, 'trigger');
+				otherStore.trigger.calls.reset();
+
+				expect(caughtExceptions.length).toEqual(0)
+				addItem("O1");
+
+				jasmine.clock().tick(0)
+				expect(caughtExceptions.length).toEqual(1)
+				expect(otherStore.trigger).not.toHaveBeenCalled()
+			});
+		});
 	});
 
 	describe("replaceState(newState)", () => {

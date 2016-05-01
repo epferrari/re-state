@@ -188,19 +188,28 @@ module.exports = function StoreFactory(Immutable, _){
 
 
 			applyMiddleware = function applyMiddleware(actionName, actionInvoke){
+				let previousState = this.state;
+
 				if($$middleware.length)
-					return $$middleware.map(m => m).reverse().reduce((next, fn) => {
-						return (delta) => {
-							let resolvedVal = undefined;
-							let nextResolver = () => {
-								// ensure that next is only called once!
-								if(!resolvedVal)
-									resolvedVal = next(delta);
-								return resolvedVal;
+					return $$middleware
+						.map(m => m)
+						.reverse()
+						.reduce((next, fn) => {
+							return (actionPayload) => {
+								let nextDelta = undefined;
+								let nextResolver = () => {
+									// ensure that next is only invoked once!
+									if(!nextDelta){
+										nextDelta = next(actionPayload);
+										// ensure we always return a reduced object literal to merge into state
+										// from each middleware fn (including original action invocation)
+										if( !isPlainObject(nextDelta) ) throw new InvalidReturnError();
+									}
+									return nextDelta;
+								};
+								return fn(nextResolver, actionName, actionPayload, previousState);
 							};
-							return fn(nextResolver, actionName, delta, this.state);
-						};
-					}, actionInvoke);
+						}, actionInvoke);
 				else
 					return actionInvoke;
 			}.bind(this);
@@ -209,24 +218,13 @@ module.exports = function StoreFactory(Immutable, _){
 
 			resolveDelta = function resolveDelta(lastState, delta, reducer, callToken){
 				let guid = chance.guid();
-				let undoDelta = undo.bind(this, ($$index + 1), guid);
-
-				let resolver = (d) => {
-					let resolvedState = reducer.$invoke(lastState, d, undoDelta, callToken);
-
-					if( !isPlainObject(resolvedState) ) {
-						throw new InvalidReturnError();
-					} else {
-						return resolvedState;
-					}
-				}
-
+				let undoInvoke = undo.bind(this, ($$index + 1), guid);
+				let resolver = (d) => reducer.$invoke(lastState, d, undoInvoke, callToken);
 				let newState = applyMiddleware(reducer.name, resolver)(delta);
+				let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, newState);
 
 				// add a new state to the $$history and increment index
 				// return state to the next reducer
-				let newImmutableState = $$history[$$index].$state.mergeDeepWith(merger, newState);
-
 				if(!Immutable.is($$history[$$index].$state, newImmutableState)){
 					$$history = $$history.slice(0, $$index + 1);
 					// add new entry to history
