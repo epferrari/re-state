@@ -186,11 +186,10 @@ module.exports = function StoreFactory(Immutable, _){
 			}.bind(this);
 
 
-
+			// returns a function to be called with an action's payload
 			applyMiddleware = function applyMiddleware(actionName, actionInvoke){
-				let previousState = this.state;
-
-				if($$middleware.length)
+				if($$middleware.length){
+					let previousState = this.state;
 					return $$middleware
 						.map(m => m)
 						.reverse()
@@ -210,8 +209,13 @@ module.exports = function StoreFactory(Immutable, _){
 								return fn(nextResolver, actionName, actionPayload, previousState);
 							};
 						}, actionInvoke);
-				else
-					return actionInvoke;
+				}	else {
+					return (actionPayload) => {
+						let delta = actionInvoke(actionPayload);
+						if(!isPlainObject(delta) ) throw new InvalidReturnError();
+						return delta;
+					};
+				}
 			}.bind(this);
 
 
