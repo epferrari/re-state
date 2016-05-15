@@ -12,8 +12,8 @@ describe("State Store", () => {
   var store, tick;
 
   beforeEach(() => {
-    jasmine.clock().install()
-    tick = (cb) => setTimeout(cb, 0);
+    //jasmine.clock().install()
+    tick = (cb, wait) => setTimeout(cb, wait);
   });
 
   afterEach(jasmine.clock().uninstall)
@@ -255,7 +255,7 @@ describe("State Store", () => {
     });
   });
 
-  describe("middleware", () => {
+  fdescribe("middleware", () => {
     let mw,
         callOrder = [],
         log = [],
@@ -263,34 +263,38 @@ describe("State Store", () => {
         addItem,
         addExtraProps;
 
+    function getCallOrder(){
+      return callOrder
+    }
+
     // middlewares
-    function handleException(next){
+    function handleException(prev, next, meta){
+      console.log("handleException")
       callOrder.push('handleException')
       try {
-        return next();
+        return next(prev())
       } catch(ex){
-        caughtExceptions.push(ex);
+        caughtExceptions.push(ex)
       }
     }
 
-    function prune(next){
+    function prune(prev, next, meta){
+      console.log("prune")
       callOrder.push('prune')
 
-      return _.pick(next(), ['cart', 'total']);
+      return next(_.pick(prev(), ['cart', 'total']))
     }
 
-    function logAction(next, action, payload, lastState){
+    function logAction(prev, next, meta){
+      console.log("logAction")
       callOrder.push('log');
 
-      log.push({
-        action: action,
-        payload: payload,
-        lastState: lastState
-      })
-      return next();
+      log.push(meta)
+      return next(prev());
     }
 
-    function calculateTotal(next, action, payload, lastState){
+    function calculateTotal(prev, next, meta){
+      console.log('calculateTotal')
       callOrder.push('calculateTotal');
 
       let prices = {
@@ -298,7 +302,7 @@ describe("State Store", () => {
         "02": 0.75,
         "03": 1.25
       };
-      let delta = next();
+      let delta = prev();
       let {cart} = delta;
 
       if(cart){
@@ -306,7 +310,7 @@ describe("State Store", () => {
           return total + (item.qty * prices[item.id]);
         }, 0);
       }
-      return delta;
+      return next(delta);
     }
 
     beforeEach(() => {
@@ -316,10 +320,10 @@ describe("State Store", () => {
 
       mw = {handleException, logAction, prune, calculateTotal}
 
-      spyOn(mw, "handleException").and.callThrough()
-      spyOn(mw, "logAction").and.callThrough()
-      spyOn(mw, "prune").and.callThrough()
-      spyOn(mw, "calculateTotal").and.callThrough()
+      //spyOn(mw, "handleException").and.callThrough()
+      //spyOn(mw, "logAction").and.callThrough()
+      //spyOn(mw, "prune").and.callThrough()
+      //spyOn(mw, "calculateTotal").and.callThrough()
     });
 
     // create some actions
@@ -352,39 +356,52 @@ describe("State Store", () => {
         {action: addItem, strategy: 'compound'},
         addExtraProps
       ]);
+
+      jasmine.clock().uninstall()
     });
 
+    //afterEach(() => jasmine.clock().install())
 
-    it("is called in the order the middleware was added to the store", () => {
+
+    it("is called in the order the middleware was added to the store", (done) => {
       addItem("01")
+      setTimeout(() => {
+        done()
+        //expect(mw.handleException).toHaveBeenCalled()
+        //expect(mw.logAction).toHaveBeenCalled()
+        //expect(mw.prune).toHaveBeenCalled()
+        //expect(mw.calculateTotal).toHaveBeenCalled()
+        console.log('callOrder',callOrder)
+        expect(getCallOrder()).toEqual(["handleException", "log", "prune", "calculateTotal"])
+      }, 50)
 
-      jasmine.clock().tick(0);
 
-      expect(mw.handleException).toHaveBeenCalled()
-      expect(mw.logAction).toHaveBeenCalled()
-      expect(mw.prune).toHaveBeenCalled()
-      expect(mw.calculateTotal).toHaveBeenCalled()
 
-      expect(callOrder).toEqual(["handleException", "log", "prune", "calculateTotal"])
     });
 
-    it("gets called for every action that will update state history", () => {
-      addItem("01")
-      addItem("01")
-      addItem("03")
+    describe("when there are multiple actions invoked", () => {
+      beforeEach((done) => {
+        addItem("01")
+        addItem("01")
+        addItem("03")
 
-      jasmine.clock().tick(0);
+        setTimeout(() => {
+          done()
+        }, 50)
+      })
 
-      // the calculateTotal middleware will be called on every action before the state is set
-      expect(store.state).toEqual({
-        cart:
-        [
-          {id: "01", qty: 2},
-          {id: "03", qty: 1}
-        ],
-        total: 2.25
-      });
-    });
+      fit("gets called for every action that will update state history", () => {
+        expect(store.state).toEqual({
+          cart:
+          [
+            {id: "01", qty: 2},
+            {id: "03", qty: 1}
+          ],
+          total: 2.25
+        })
+      })
+    })
+
 
     it("operates on the new state before it gets merged into history", () => {
       addExtraProps({something: 'else'});

@@ -19,6 +19,7 @@
   "author": "Ethan Ferrari <ethan@ethanferrari.com>",
   "license": "MIT",
   "dependencies": {
+    "bluebird": "^3.3.5",
     "chance": "^1.0.2",
     "immutable": "^3.7.6"
   },
