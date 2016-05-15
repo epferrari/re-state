@@ -2,11 +2,42 @@
 
 import Immutable from 'immutable';
 import _ from 'lodash';
-
+import Promise from 'bluebird';
 import restate from '../src/restate';
 
 const {Store, Action} = restate(Immutable, _);
 
+const waitFor = (predicate, cb, maxWait) => {
+  let finish = () => {
+    clearTimeout($to)
+    clearInterval($int)
+    cb()
+  }
+
+  let $int = setInterval(() => {
+    if(predicate())
+      finish()
+  }, 5)
+  let $to = setTimeout(finish, maxWait || 5000)
+}
+
+const waitsFor = (spec, done, maxWait) => {
+  let finish = () => {
+    clearTimeout($to)
+    clearInterval($int)
+    done()
+  }
+
+  let $int = setInterval(() => {
+    try{
+      spec()
+      finish()
+    }catch(ex){
+      console.log("TRYING AGAIN")
+    }
+  }, 5)
+  let $to = setTimeout(finish, maxWait || 5000)
+}
 
 describe("State Store", () => {
   var store, tick;
@@ -263,14 +294,29 @@ describe("State Store", () => {
         addItem,
         addExtraProps;
 
-    function getCallOrder(){
-      return callOrder
-    }
+  // create some actions
 
-    // middlewares
-    function handleException(prev, next, meta){
-      console.log("handleException")
-      callOrder.push('handleException')
+    addItem = new Action('addItem', (lastState, id) => {
+      let {cart} = lastState;
+      let itemIndex = _.findIndex(cart, (item) => item.id === id);
+
+      if(itemIndex !== -1)
+        cart[itemIndex].qty++;
+      else
+        cart.push({id, qty: 1});
+
+      return {cart};
+    });
+
+    addExtraProps = new Action('addExtraProps', (lastState, payload) => {
+      return payload;
+    });
+
+
+  // create some middleware
+
+    function handleExceptions(prev, next, meta){
+      callOrder.push('handleExceptions')
       try {
         return next(prev())
       } catch(ex){
@@ -278,23 +324,28 @@ describe("State Store", () => {
       }
     }
 
-    function prune(prev, next, meta){
-      console.log("prune")
-      callOrder.push('prune')
+    function handleAsyncActions(prev, next, meta){
+      callOrder.push("handleAsyncActions")
+      let delta = prev()
+      if(typeof delta.then === 'function'){
+        return delta.then(next)
+      }else{
+        return next(delta)
+      }
+    }
 
+    function prune(prev, next, meta){
+      callOrder.push('prune')
       return next(_.pick(prev(), ['cart', 'total']))
     }
 
-    function logAction(prev, next, meta){
-      console.log("logAction")
-      callOrder.push('log');
-
+    function logMeta(prev, next, meta){
+      callOrder.push('logMeta');
       log.push(meta)
       return next(prev());
     }
 
     function calculateTotal(prev, next, meta){
-      console.log('calculateTotal')
       callOrder.push('calculateTotal');
 
       let prices = {
@@ -313,43 +364,26 @@ describe("State Store", () => {
       return next(delta);
     }
 
+
     beforeEach(() => {
       caughtExceptions = [];
       log = [];
       callOrder = [];
 
-      mw = {handleException, logAction, prune, calculateTotal}
+      mw = {handleExceptions, handleAsyncActions, logMeta, prune, calculateTotal}
 
-      //spyOn(mw, "handleException").and.callThrough()
-      //spyOn(mw, "logAction").and.callThrough()
-      //spyOn(mw, "prune").and.callThrough()
-      //spyOn(mw, "calculateTotal").and.callThrough()
-    });
-
-    // create some actions
-    beforeEach( () => {
-      addItem = new Action('addItem', (lastState, id) => {
-        let {cart} = lastState;
-        let itemIndex = _.findIndex(cart, (item) => item.id === id);
-
-        if(itemIndex !== -1)
-          cart[itemIndex].qty++;
-        else
-          cart.push({id, qty: 1});
-
-        return {cart};
-      });
-
-      addExtraProps = new Action('addExtraProps', (lastState, payload) => {
-        return payload;
-      });
+      spyOn(mw, "handleExceptions").and.callThrough()
+      spyOn(mw, "handleAsyncActions").and.callThrough()
+      spyOn(mw, "logMeta").and.callThrough()
+      spyOn(mw, "prune").and.callThrough()
+      spyOn(mw, "calculateTotal").and.callThrough()
     });
 
     // set up store with middleware and listening to actions
     beforeEach(() => {
       store = new Store(
         {cart: [], total: 0},
-        [mw.handleException, mw.logAction, mw.prune, mw.calculateTotal]
+        [mw.handleExceptions, mw.handleAsyncActions, mw.logMeta, mw.prune, mw.calculateTotal]
       );
 
       store.listenTo([
@@ -360,45 +394,130 @@ describe("State Store", () => {
       jasmine.clock().uninstall()
     });
 
-    //afterEach(() => jasmine.clock().install())
+    afterEach(() => jasmine.clock().install())
 
-
-    it("is called in the order the middleware was added to the store", (done) => {
-      addItem("01")
-      setTimeout(() => {
-        done()
-        //expect(mw.handleException).toHaveBeenCalled()
-        //expect(mw.logAction).toHaveBeenCalled()
-        //expect(mw.prune).toHaveBeenCalled()
-        //expect(mw.calculateTotal).toHaveBeenCalled()
-        console.log('callOrder',callOrder)
-        expect(getCallOrder()).toEqual(["handleException", "log", "prune", "calculateTotal"])
-      }, 50)
-
-
-
-    });
-
-    describe("when there are multiple actions invoked", () => {
+    describe("calling middleware", () => {
       beforeEach((done) => {
+        addItem("01")
+        setTimeout(done,50)
+      })
+
+      it("is called in the order the middleware was added to the store", () => {
+        console.log('callOrder',callOrder)
+        console.log('exceptions', caughtExceptions)
+        expect(callOrder).toEqual([
+          "handleExceptions",
+          "handleAsyncActions",
+          "logMeta",
+          "prune",
+          "calculateTotal"
+        ])
+      })
+    })
+
+    describe("handling an async action", () => {
+      let asyncAddItem, resolver, resolved;
+
+      beforeEach((done) => {
+        resolved = undefined
+        let asyncAddItem = new Action((lastState, payload) => {
+          resolved = new Promise((resolve, reject) => {
+            // reveal this externally so we can mock the async resolution
+            let {cart} = lastState
+            // making it simple, just add an item to the cart
+            cart.push({id: payload, qty: 1})
+            resolver = () => resolve({cart})
+          })
+
+          return resolved
+        })
+
+        store.listenTo(asyncAddItem)
+
+        asyncAddItem("03")
+        setTimeout(done, 25)
+      })
+
+      afterEach((done) => {
+        setTimeout(() => {
+          resolver = resolved = undefined
+          done()
+        },0)
+
+      })
+
+      it("should delay subsequent middleware exectution until the async action is resolved", (done) => {
+        expect(callOrder).toEqual([
+          "handleExceptions",
+          "handleAsyncActions"
+        ])
+
+        resolver()
+
+        let pred = () => {
+          return (callOrder == [
+            "handleExceptions",
+            "handleAsyncActions",
+            "logMeta",
+            "prune",
+            "calculateTotal"
+          ])
+        }
+
+        let onSuccess = () => {
+          expect(callOrder).toEqual([
+            "handleExceptions",
+            "handleAsyncActions",
+            "logMeta",
+            "prune",
+            "calculateTotal"
+          ])
+        }
+        waitsFor(onSuccess, done, 20)
+
+        /*
+        resolved.then(() => {
+          done()
+          expect(callOrder).toEqual([
+            "handleExceptions",
+            "handleAsyncActions",
+            "logMeta",
+            "prune",
+            "calculateTotal"
+          ])
+        })
+        */
+      })
+
+      it("delays updating the state history until the async action is resolved", (done) => {
+        expect(store.state).toEqual({ cart: [], total: 0 })
+
+        resolver()
+
+        resolved.then(() => {
+          done()
+          expect(store.state).toEqual({ cart: [ { id: '03', qty: 1 } ], total: 1.25 })
+        })
+      })
+    })
+
+
+
+    fdescribe("when there are multiple actions invoked", () => {
+      it("gets called for every action that will update state history", (done) => {
         addItem("01")
         addItem("01")
         addItem("03")
 
-        setTimeout(() => {
-          done()
-        }, 50)
-      })
-
-      fit("gets called for every action that will update state history", () => {
-        expect(store.state).toEqual({
-          cart:
-          [
-            {id: "01", qty: 2},
-            {id: "03", qty: 1}
-          ],
-          total: 2.25
-        })
+        waitsFor(() => {
+          expect(store.state).toEqual({
+            cart:[
+              {id: "01", qty: 2},
+              {id: "03", qty: 1}
+            ],
+            total: 2.25
+          })
+        }, done)
       })
     })
 
