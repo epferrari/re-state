@@ -9,6 +9,7 @@ const {Store, Action} = restate(Immutable, _);
 
 
 describe("State Store", () => {
+
   var store, tick;
 
   beforeEach(() => {
