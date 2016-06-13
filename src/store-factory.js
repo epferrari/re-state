@@ -399,11 +399,11 @@ module.exports = function StoreFactory(Immutable, _){
 			this.listenTo(noop);
 
 			// set a second reducer to handle direct setState operations
-			let $set = new Action('setState', (lastState, deltaMap) => {
+			let _setState = new Action('setState', (lastState, deltaMap) => {
 				let newState = merge({}, lastState, deltaMap);
 				return newState;
 			});
-			this.listenTo($set, Action.strategies.COMPOUND);
+			this.listenTo(_setState, Action.strategies.COMPOUND);
 
 
 		/**
@@ -421,20 +421,20 @@ module.exports = function StoreFactory(Immutable, _){
 				if(!isPlainObject(deltaMap)){
 					throw new InvalidDeltaError();
 				} else {
-					return $set(deltaMap);
+					return _setState(deltaMap);
 				}
 			};
 
 
 			// set a third reducer that entirely replaces the state with a new state
-			let $replace = new Action('replaceState', (lastState, newState) => {
+			let _replaceState = new Action('replaceState', (lastState, newState) => {
 				return reduce(lastState, (acc, val, key) => {
 					acc[key] = newState[key] || "$unset";
 					return acc;
 				}, newState);
 			});
 
-			this.listenTo($replace, Action.strategies.TAIL)
+			this.listenTo(_replaceState, Action.strategies.TAIL)
 
 
 		/**
@@ -452,7 +452,7 @@ module.exports = function StoreFactory(Immutable, _){
 				if(!isPlainObject(newState)){
 					throw new InvalidDeltaError();
 				} else {
-					return $replace(newState);
+					return _replaceState(newState);
 				}
 			};
 
@@ -475,7 +475,7 @@ module.exports = function StoreFactory(Immutable, _){
 					$$index = 0;
 				} else {
 					// soft reset, push the initial state to the end of the $$history stack
-					$replace(this.getInitialState());
+					_replaceState(this.getInitialState());
 				}
 
 				this.trigger();
