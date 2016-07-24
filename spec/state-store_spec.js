@@ -1,11 +1,8 @@
 "use-strict";
 
-import Immutable from 'immutable';
-import _ from 'lodash';
 import Promise from 'bluebird';
-import restate from '../src/restate';
+import {Store, Action} from '../src/apheleia';
 
-const {Store, Action} = restate(Immutable, _);
 
 const waitFor = (predicate, cb, maxWait) => {
   let finish = () => {
@@ -380,7 +377,8 @@ describe("State Store", () => {
     });
 
     // set up store with middleware and listening to actions
-    beforeEach(() => {
+    beforeEach(done => {
+      console.log('store 1', store)
       store = new Store(
         {cart: [], total: 0},
         [mw.handleExceptions, mw.handleAsyncActions, mw.logMeta, mw.prune, mw.calculateTotal]
@@ -392,6 +390,7 @@ describe("State Store", () => {
       ]);
 
       jasmine.clock().uninstall()
+      done()
     });
 
     afterEach(() => jasmine.clock().install())
@@ -509,6 +508,17 @@ describe("State Store", () => {
         addItem("01")
         addItem("03")
 
+				setTimeout(() => {
+					expect(store.state).toEqual({
+						cart:[
+              {id: "01", qty: 2},
+              {id: "03", qty: 1}
+            ],
+            total: 2.25
+					})
+					done()
+				}, 50)
+				/*
         waitsFor(() => {
           expect(store.state).toEqual({
             cart:[
@@ -518,6 +528,7 @@ describe("State Store", () => {
             total: 2.25
           })
         }, done)
+				*/
       })
     })
 

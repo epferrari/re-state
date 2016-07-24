@@ -1,1 +1,0 @@
-window.reState = require('./restate');

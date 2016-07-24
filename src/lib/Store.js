@@ -1,56 +1,20 @@
 "use-strict";
 
+const Promise = require("bluebird");
+
 const Action = require('./Action');
 const {getter, defineProperty} = require('./utils');
-const {ACTION} = require('./constants');
+const {ACTION, CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED} = require('./constants');
 const EventEmitter = require('./EventEmitter');
+const InvalidDeltaError = require('./InvalidDeltaError');
+const InvalidReturnError = require('./InvalidReturnError');
+const InvalidReducerError = require('./InvalidReducerError');
+const InvalidIndexError = require('./InvalidIndexError');
 
-var chance = require('chance').Chance();
-var Promise = require("bluebird");
 
-module.exports = function StoreFactory(Immutable, _){
+module.exports = function StoreFactory(Immutable, _, generateGuid){
 
   let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains} = _;
-
-  // events
-  const CHANGE_EVENT = 'STATE_CHANGE';
-  const SET_EVENT = 'SET_INVOKED';
-  const REDUCE_EVENT = 'REDUCE_INVOKED';
-  const ACTION_ADDED = "ACTION_ADDED";
-
-
-  class InvalidDeltaError extends Error {
-    constructor(){
-      super();
-      this.name = "InvalidDelta";
-      this.message = "a deltaMap passed to merge into state must be an object literal";
-      this.stack = (new Error()).stack;
-    }
-  }
-
-  class InvalidReturnError extends Error {
-    constructor(){
-      super();
-      this.name = "InvalidReturn";
-      this.message = "a reducer must return an object literal to reduce into state";
-    }
-  }
-
-  class InvalidReducerError extends Error {
-    constructor(){
-      super()
-      this.name = "InvalidReducer";
-      this.message = "a reducer must be created by the Action factory with `new Restate.Action(<reducer>)`"
-    }
-  }
-
-  class InvalidIndexError extends Error {
-    constructor(){
-      super();
-      this.name = "InvalidHistoryIndex";
-      this.message = "history index must be an integer";
-    }
-  }
 
   return class StateStore {
     /**
@@ -59,19 +23,16 @@ module.exports = function StoreFactory(Immutable, _){
     * @param {array} [middleware=[]] - an array of middleware functions to apply during state transitions
     */
     constructor(initialState, middleware){
+
       var $$history,
           $$index,
           $$reducers,
           $$middleware,
           emitter,
-          queueReduceCycle,
-          executeReduceCycle,
-          resolveReducer,
-          resolveDelta,
-          applyMiddleware,
-          undo,
-          merger,
-          rewriteHistory;
+          trigger,
+          currentState;
+
+
 
       if(typeof initialState !== 'undefined' && !isPlainObject(initialState))
         throw new InvalidDeltaError();
@@ -87,33 +48,49 @@ module.exports = function StoreFactory(Immutable, _){
         reducer_invoked: 0,
         delta: {},
         $state: Immutable.Map().merge(initialState),
-        guid: chance.guid()
+        guid: generateGuid()
       }];
+
 
       $$middleware = _.isArray(middleware) ? middleware : [];
 
       emitter = new EventEmitter();
 
-
-
-      getter(this, 'emitter', () => emitter );
-      getter(this, 'reducers', () => $$reducers.toJS() );
-      getter(this, 'previousStates', () => $$history.length);
-      getter(this, 'history', () => $$history);
-      getter(this, 'index', () => $$index);
-      getter(this, 'state', () => {
+      currentState = () => {
         let state = Immutable.Map($$history[$$index].$state).toJS();
         return reduce(state, (acc, val, key) => {
           if(val !== undefined)
             acc[key] = val;
           return acc;
         }, {});
-      });
+      };
+      trigger = () => emitter.emit(CHANGE_EVENT, currentState());
+
+      getter(this, 'reducers', () => $$reducers.toJS() );
+      getter(this, 'previousStates', () => $$history.length);
+      getter(this, 'history', () => $$history);
+      getter(this, 'index', () => $$index);
+      getter(this, 'state', () => currentState());
+      getter(this, '_emitter', () => emitter );
+
+
+
+      /**
+      * @name trigger
+      * @desc trigger all listeners with the current state
+      * @method
+      * @instance
+      * @fires CHANGE_EVENT
+      * @memberof StateStore
+      */
+      this.trigger = trigger;
+
+
 
 
 
       // respect "$unset" value passed to remove a value from state
-      merger = function merger(prev, next, key){
+      function merger(prev, next, key){
         if(next == "$unset")
           return undefined;
         else if(next === undefined)
@@ -124,7 +101,88 @@ module.exports = function StoreFactory(Immutable, _){
 
 
 
-      undo = function undo(atIndex, guid){
+
+
+			/**
+      *
+      * @desc reduce a series of new states from pending $$reducers
+      * @private
+      */
+      function executeReduceCycle(previousState){
+        emitter.emit(REDUCE_EVENT);
+        let initialIndex = $$index;
+        let reducersToCall = chain($$reducers.toJS())
+          .filter(reducer => reducer.requests.length)
+          .sortBy(reducer => reducer.index)
+          .value()
+
+        return Promise.reduce(reducersToCall, (state, reducer) => {
+          // run the state through the reducer
+          return resolveReducer(state, reducer)
+            .then(newState => {
+              // clear deltaMaps for the next cycle and create new immutable list
+              $$reducers = $$reducers.update(reducer.index, r => {
+                r.requests = [];
+                return r;
+              });
+              return newState;
+            })
+        }, merge({}, previousState) )
+        .bind(this)
+        .then(() => {
+          // notify on change
+          if(initialIndex !== $$index)
+            trigger();
+        })
+      }
+
+
+
+			function resolveReducer(lastState, reducer){
+        let req, resolver;
+
+        switch((reducer.strategy || "").toLowerCase()){
+          case (Action.strategies.COMPOUND.toLowerCase()):
+            // reduce down all the deltas
+            return Promise.reduce(reducer.requests, (state, r) => {
+              return resolveDelta(state, r.delta, reducer, r.token);
+            }, lastState);
+          case (Action.strategies.HEAD.toLowerCase()):
+            // transform using the first delta queued
+            req = reducer.requests[0];
+            return resolveDelta(lastState, req.delta, reducer, req.token);
+          case (Action.strategies.TAIL.toLowerCase()):
+            // resolve using the last delta queued
+            req = reducer.requests.pop();
+            return resolveDelta(lastState, req.delta, reducer, req.token);
+          default:
+            // use tailing strategy
+            req = reducer.requests.pop();
+            return resolveDelta(lastState, req.delta, reducer, req.token);
+        }
+      }
+
+
+			function resolveDelta(lastState, payload, reducer, callToken){
+        let guid = generateGuid();
+        let undoInvoke = () => undo(($$index + 1), guid);
+        let actionInvoke = (p0) => reducer.$invoke(lastState, p0, undoInvoke, callToken);
+
+        let meta = {
+          guid: guid,
+          action: reducer.name,
+          payload: payload,
+          reducer_index: reducer.index,
+          last_state: JSON.stringify(lastState)
+        };
+
+        return applyMiddleware(actionInvoke, meta)(payload);
+
+      }
+
+
+
+			function undo(atIndex, guid){
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history tree in unpredicatable ways
@@ -160,17 +218,17 @@ module.exports = function StoreFactory(Immutable, _){
           return () => {};
         }
 
-      }.bind(this);
+      }
 
 
-
-      rewriteHistory = function rewriteHistory(fromIndex){
+      // syncronous
+			function rewriteHistory(fromIndex){
         let lastHistory = $$history[fromIndex - 1];
 
         $$history
         .slice(fromIndex)
         .reduce((last, curr, i) => {
-          let reducerToApply = this.reducers[curr.reducer_invoked];
+          let reducerToApply = $$reducers.toJS()[curr.reducer_invoked];
           let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.delta);
           let revisedHistory = {
             reducer_invoked: curr.reducer_invoked,
@@ -183,43 +241,39 @@ module.exports = function StoreFactory(Immutable, _){
           return revisedHistory;
         }, lastHistory);
 
-        this.trigger();
-      }.bind(this);
+        trigger();
+      }
 
 
 
-      // returns a function to be called with an action's payload
-      applyMiddleware = function applyMiddleware(actionInvoke, meta){
+			// returns a function to be called with an action's payload
+      function applyMiddleware(actionInvoke, meta){
         if($$middleware.length){
-          console.log("applying middleware")
           let middleware, getMeta, getNext;
 
           middleware = $$middleware.map(m => m)
+          // ensure meta is immutable in each middleware
           getMeta = () => meta
           getNext = i => payload_n => {
-            console.log('getting next', i + 1)
             let n = (i + 1);
             if(!payload_n)
               throw new InvalidReturnError();
             if(middleware[n])
               return middleware[n](() => payload_n, getNext(n), getMeta());
           };
+          // final function of the middleware stack is to apply a state update
+          middleware.push(pushState);
 
-          middleware.push(pushState)
-
-          return (payload_0) => middleware[0](() => actionInvoke(payload_0), getNext(0), meta)
+          return payload_0 => middleware[0](() => actionInvoke(payload_0), getNext(0), getMeta());
         } else {
-          return (payload_0) => {
-            return pushState(() => payload_0, 1, meta);
-          };
+          return payload_0 => pushState(() => payload_0, 1, getMeta());
         }
-      };
+      }
 
-      // create pushState function with middleware signature
+      // pushState function with middleware signature
+			// called as the last middleware in the stack to create a new state
       // returns a promise
       function pushState(getNextState, noop, meta){
-        console.log('pushState')
-        console.log('nextState', getNextState())
         return new Promise((resolve, reject) => {
           let nextState, nextImmutableState;
 
@@ -246,90 +300,15 @@ module.exports = function StoreFactory(Immutable, _){
         })
       }
 
-      resolveDelta = function resolveDelta(lastState, payload, reducer, callToken){
-
-        let guid = chance.guid();
-        let undoInvoke = undo.bind(this, ($$index + 1), guid);
-        let actionInvoke = (p0) => reducer.$invoke(lastState, p0, undoInvoke, callToken);
-
-        let meta = {
-          guid: guid,
-          action: reducer.name,
-          payload: payload,
-          reducer_index: reducer.index,
-          last_state: JSON.stringify(lastState)
-        };
-
-        return applyMiddleware(actionInvoke, meta)(payload);
-
-      }.bind(this);
 
 
 
-      resolveReducer = function resolveReducer(lastState, reducer){
-        console.log('resolving reducer')
-        let req, resolver;
-
-        switch((reducer.strategy || "").toLowerCase()){
-          case (Action.strategies.COMPOUND.toLowerCase()):
-            // reduce down all the deltas
-            return Promise.reduce(reducer.requests, (state, r) => {
-              return resolveDelta(state, r.delta, reducer, r.token);
-            }, lastState);
-          case (Action.strategies.HEAD.toLowerCase()):
-            // transform using the first delta queued
-            req = reducer.requests[0];
-            return resolveDelta(lastState, req.delta, reducer, req.token);
-          case (Action.strategies.TAIL.toLowerCase()):
-            // resolve using the last delta queued
-            req = reducer.requests.pop();
-            return resolveDelta(lastState, req.delta, reducer, req.token);
-          default:
-            // use tailing strategy
-            req = reducer.requests.pop();
-            return resolveDelta(lastState, req.delta, reducer, req.token);
-        }
-      };
 
 
 
-      /**
-      *
-      * @desc reduce a series of new states from pending $$reducers
-      * @private
-      */
-      executeReduceCycle = function executeReduceCycle(previousState){
-        this.emitter.emit(REDUCE_EVENT);
-        let initialIndex = $$index;
-        let reducersToCall = chain($$reducers.toJS())
-          .filter(reducer => reducer.requests.length)
-          .sortBy(reducer => reducer.index)
-          .value()
 
-        console.log('executing reduce cycle')
-        console.log('reducersToCall', reducersToCall)
-        return Promise.reduce(reducersToCall, (state, reducer) => {
-          // run the state through the reducer
-          console.log('state', state)
-          console.log('reducer', reducer)
-          return resolveReducer(state, reducer)
-            .then(newState => {
-              console.log("new state", newState)
-              // clear deltaMaps for the next cycle and create new immutable list
-              $$reducers = $$reducers.update(reducer.index, r => {
-                r.requests = [];
-                return r;
-              });
-              return newState;
-            })
-        }, merge({}, previousState) )
-        .bind(this)
-        .then(() => {
-          // notify on change
-          console.log('indexChange',(initialIndex !== $$index ) )
-          if(initialIndex !== $$index) this.trigger()
-        })
-      }.bind(this);
+
+
 
 
 
@@ -339,7 +318,7 @@ module.exports = function StoreFactory(Immutable, _){
       * @desc queue a reduce cycle on next tick
       * @private
       */
-      queueReduceCycle = function queueReduceCycle(index, token, delta){
+      function queueReduceCycle(index, token, delta){
         // update reducer hash in $$reducers with deltaMap
         $$reducers = $$reducers.update(index, reducer => {
           reducer.requests.push({delta: delta, token: token});
@@ -349,23 +328,22 @@ module.exports = function StoreFactory(Immutable, _){
         // defer a state reduction on the next tick if one isn't already queued
         if(!reducePending){
           reducePending = true;
-          executeReduceCycle(this.state).then(() => {reducePending = false})
+          executeReduceCycle(currentState()).then(() => {reducePending = false})
           //setTimeout(() => {
-          //  executeReduceCycle(this.state).then(() => {reducePending = false})
+          //  executeReduceCycle(currentState()).then(() => {reducePending = false})
           //}, 0);
         }
-      }.bind(this);
+      };
 
 
 
-      let listenToAction = function listenToAction(action, strategy){
+      function listenToAction(action, strategy){
         if((action.$$type == ACTION)){
           let index = $$reducers.size;
 
           let reducer = {
             name: action.$$name,
             $invoke: (lastState, delta, undoFn, token) => {
-              /* maybe middleware here later */
               return action.$$invoke(lastState, delta, undoFn, token);
             },
             index: index,
@@ -388,7 +366,7 @@ module.exports = function StoreFactory(Immutable, _){
         } else {
           throw new InvalidReducerError();
         }
-      }.bind(this);
+      }
 
 
     /**
@@ -421,16 +399,16 @@ module.exports = function StoreFactory(Immutable, _){
         }
       }.bind(this);
 
-      // set the store's first reducer as a noop
-      let noop = new Action('noop', (lastState) => lastState);
-      this.listenTo(noop);
+    // set the store's first reducer as a noop
+    let action_noOp = new Action('noop', lastState => lastState);
+    this.listenTo(action_noOp);
 
-      // set a second reducer to handle direct setState operations
-      let $set = new Action('setState', (lastState, deltaMap) => {
-        let newState = merge({}, lastState, deltaMap);
-        return newState;
-      });
-      this.listenTo($set, Action.strategies.COMPOUND);
+    // set a second reducer to handle direct setState operations
+    let action_setState = new Action('setState', (lastState, deltaMap) => {
+      let newState = merge({}, lastState, deltaMap);
+      return newState;
+    });
+    this.listenTo(action_setState, Action.strategies.COMPOUND);
 
 
     /**
@@ -448,20 +426,20 @@ module.exports = function StoreFactory(Immutable, _){
         if(!isPlainObject(deltaMap)){
           throw new InvalidDeltaError();
         } else {
-          return $set(deltaMap);
+          return action_setState(deltaMap);
         }
       };
 
 
       // set a third reducer that entirely replaces the state with a new state
-      let $replace = new Action('replaceState', (lastState, newState) => {
+      let action_replaceState = new Action('replaceState', (lastState, newState) => {
         return reduce(lastState, (acc, val, key) => {
           acc[key] = newState[key] || "$unset";
           return acc;
         }, newState);
       });
 
-      this.listenTo($replace, Action.strategies.TAIL)
+      this.listenTo(action_replaceState, Action.strategies.TAIL)
 
 
     /**
@@ -479,7 +457,7 @@ module.exports = function StoreFactory(Immutable, _){
         if(!isPlainObject(newState)){
           throw new InvalidDeltaError();
         } else {
-          return $replace(newState);
+          return action_replaceState(newState);
         }
       };
 
@@ -645,19 +623,7 @@ module.exports = function StoreFactory(Immutable, _){
     * @memberof StateStore
     */
     addListener(listener, thisBinding){
-      return this.emitter.on(CHANGE_EVENT, listener, thisBinding);
-    }
-
-    /**
-    * @name trigger
-    * @desc trigger all listeners with the current state
-    * @method
-    * @instance
-    * @fires CHANGE_EVENT
-    * @memberof StateStore
-    */
-    trigger(){
-      this.emitter.emit(CHANGE_EVENT, this.state);
+      return this._emitter.on(CHANGE_EVENT, listener, thisBinding);
     }
 
     static get errors(){
