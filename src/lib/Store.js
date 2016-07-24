@@ -1,7 +1,5 @@
 "use-strict";
 
-const Promise = require("bluebird");
-
 const Action = require('./Action');
 const {getter, defineProperty} = require('./utils');
 const {ACTION, CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED} = require('./constants');
