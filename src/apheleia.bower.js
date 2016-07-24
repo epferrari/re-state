@@ -1,0 +1,1 @@
+window.Apheleia = require('./factory');
