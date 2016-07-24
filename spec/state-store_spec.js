@@ -5,6 +5,7 @@ import {Store, Action} from '../src';
 import _ from 'lodash';
 
 describe("State Store", () => {
+
   var store, tick;
 
   beforeEach(() => {
