@@ -1,20 +1,25 @@
 "use-strict";
 
-import Promise from 'bluebird';
-import {Store, Action} from '../src/apheleia';
+import {Store, Action} from '../src';
 import _ from 'lodash';
 
-/*
+
 describe("middleware", () => {
 
-  let mw,
-      callOrder = [],
-      log = [],
-      caughtExceptions = [],
+  let store, mw,
+      callOrder,
+      log,
+      caughtExceptions,
       addItem,
       addExtraProps;
 
   beforeEach(() => {
+    jasmine.clock().install();
+
+    callOrder = [],
+    log = [],
+    caughtExceptions = [],
+
     // create some actions
 
     addItem = new Action('addItem', (lastState, id) => {
@@ -36,8 +41,8 @@ describe("middleware", () => {
 
     // create some middleware
 
-    function handleExceptions(prev, next, meta){
-      callOrder.push('handleExceptions')
+    function exceptionHandler(prev, next, meta){
+      callOrder.push('exceptionHandler')
       try {
         return next(prev())
       } catch(ex){
@@ -45,29 +50,20 @@ describe("middleware", () => {
       }
     }
 
-    function handleAsyncActions(prev, next, meta){
-      callOrder.push("handleAsyncActions")
-      let delta = prev()
-      if(typeof delta.then === 'function'){
-        return delta.then(next)
-      }else{
-        return next(delta)
-      }
-    }
 
-    function prune(prev, next, meta){
-      callOrder.push('prune')
+    function pruner(prev, next, meta){
+      callOrder.push('pruner')
       return next(_.pick(prev(), ['cart', 'total']))
     }
 
-    function logMeta(prev, next, meta){
-      callOrder.push('logMeta');
+    function logger(prev, next, meta){
+      callOrder.push('logger');
       log.push(meta)
       return next(prev());
     }
 
-    function calculateTotal(prev, next, meta){
-      callOrder.push('calculateTotal');
+    function totaller(prev, next, meta){
+      callOrder.push('totaller');
 
       let prices = {
         "01": 0.50,
@@ -85,149 +81,60 @@ describe("middleware", () => {
       return next(delta);
     }
 
+    mw = {exceptionHandler, logger, pruner, totaller}
 
-  beforeEach(() => {
-    caughtExceptions = [];
-    log = [];
-    callOrder = [];
+    spyOn(mw, "exceptionHandler").and.callThrough()
+    spyOn(mw, "logger").and.callThrough()
+    spyOn(mw, "pruner").and.callThrough()
+    spyOn(mw, "totaller").and.callThrough()
 
-    mw = {handleExceptions, handleAsyncActions, logMeta, prune, calculateTotal}
+    // finally set up store with actions and middleware
 
-    spyOn(mw, "handleExceptions").and.callThrough()
-    spyOn(mw, "handleAsyncActions").and.callThrough()
-    spyOn(mw, "logMeta").and.callThrough()
-    spyOn(mw, "prune").and.callThrough()
-    spyOn(mw, "calculateTotal").and.callThrough()
-  });
-
-  // set up store with middleware and listening to actions
-  beforeEach(() => {
     store = new Store(
       {cart: [], total: 0},
-      [mw.handleExceptions, mw.handleAsyncActions, mw.logMeta, mw.prune, mw.calculateTotal]
+      _.map(mw, fn => fn)
     );
 
     store.listenTo([
       {action: addItem, strategy: 'compound'},
       addExtraProps
     ]);
-
-    //jasmine.clock().uninstall()
   });
 
-  afterEach(() => jasmine.clock().install())
+
+  afterEach(() => jasmine.clock().uninstall());
 
   describe("calling middleware", () => {
-    beforeEach((done) => {
+    beforeEach(() => {
       addItem("01")
-      setTimeout(done,50)
     })
 
     it("is called in the order the middleware was added to the store", () => {
-      console.log('callOrder',callOrder)
-      console.log('exceptions', caughtExceptions)
+      jasmine.clock().tick(0)
       expect(callOrder).toEqual([
-        "handleExceptions",
-        "handleAsyncActions",
-        "logMeta",
-        "prune",
-        "calculateTotal"
+        "exceptionHandler",
+        "logger",
+        "pruner",
+        "totaller"
       ])
     })
-  })
-
-  describe("handling an async action", () => {
-    let asyncAddItem, resolver, resolved;
-
-    beforeEach((done) => {
-      resolved = undefined
-      let asyncAddItem = new Action((lastState, payload) => {
-        resolved = new Promise((resolve, reject) => {
-          // reveal this externally so we can mock the async resolution
-          let {cart} = lastState
-          // making it simple, just add an item to the cart
-          cart.push({id: payload, qty: 1})
-          resolver = () => resolve({cart})
-        })
-
-        return resolved
-      })
-
-      store.listenTo(asyncAddItem)
-
-      asyncAddItem("03")
-      setTimeout(done, 25)
-    })
-
-    afterEach((done) => {
-      setTimeout(() => {
-        resolver = resolved = undefined
-        done()
-      },0)
-
-    })
-
-    it("should delay subsequent middleware exectution until the async action is resolved", (done) => {
-      expect(callOrder).toEqual([
-        "handleExceptions",
-        "handleAsyncActions"
-      ])
-
-      resolver()
-
-      let pred = () => {
-        return (callOrder == [
-          "handleExceptions",
-          "handleAsyncActions",
-          "logMeta",
-          "prune",
-          "calculateTotal"
-        ])
-      }
-
-      let onSuccess = () => {
-        expect(callOrder).toEqual([
-          "handleExceptions",
-          "handleAsyncActions",
-          "logMeta",
-          "prune",
-          "calculateTotal"
-        ])
-      }
-      waitsFor(onSuccess, done, 20)
-
-    })
-
-    it("delays updating the state history until the async action is resolved", (done) => {
-      expect(store.state).toEqual({ cart: [], total: 0 })
-
-      resolver()
-
-      resolved.then(() => {
-        done()
-        expect(store.state).toEqual({ cart: [ { id: '03', qty: 1 } ], total: 1.25 })
-      })
-    })
-  })
-
-
+  });
 
   describe("when there are multiple actions invoked", () => {
-    it("gets called for every action that will update state history", (done) => {
+    it("gets called for every action that will update state history", ()=> {
       addItem("01")
       addItem("01")
       addItem("03")
 
-      setTimeout(() => {
-        expect(store.state).toEqual({
-          cart:[
-            {id: "01", qty: 2},
-            {id: "03", qty: 1}
-          ],
-          total: 2.25
-        })
-        done()
-      }, 50)
+      jasmine.clock().tick(0)
+
+      expect(store.state).toEqual({
+        cart:[
+          {id: "01", qty: 2},
+          {id: "03", qty: 1}
+        ],
+        total: 2.25
+      })
 
     })
   })
@@ -277,13 +184,16 @@ describe("middleware", () => {
     });
 
     it("can catch an error raised by a poorly written middleware downstream", () => {
-      mw.poorlyWrittenMiddleware = (next) => {
-        next()
+      mw.poorlyWrittenMiddleware = (next, prev, meta) => {
+        next(prev())
         return "not an object literal";
       }
 
 
-      let otherStore = new Store({cart: [], total: 0}, [mw.handleException, mw.poorlyWrittenMiddleware])
+      let otherStore = new Store(
+        {cart: [], total: 0},
+        [mw.exceptionHandler, mw.poorlyWrittenMiddleware]
+      )
 
       otherStore.listenTo(addItem);
 
@@ -299,4 +209,3 @@ describe("middleware", () => {
     });
   });
 });
-*/

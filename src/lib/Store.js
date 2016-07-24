@@ -205,14 +205,13 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           middleware = $$middleware.map(m => m)
           getNext = i => payload_n => {
             let n = (i + 1);
-            if(!payload_n)
+            if(!isPlainObject(payload_n))
               throw new InvalidReturnError();
             if(middleware[n])
               return middleware[n](() => payload_n, getNext(n), getMeta());
           };
           // final function of the middleware stack is to apply a state update
           middleware.push(pushState);
-
           return payload_0 => middleware[0](() => actionInvoke(payload_0), getNext(0), getMeta());
         } else {
           return payload_0 => pushState(() => actionInvoke(payload_0), 1, getMeta());
