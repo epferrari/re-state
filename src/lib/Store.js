@@ -47,7 +47,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       // private stack of [reducer index, Immutable Map app state]
       $$history = [{
         reducer_invoked: 0,
-        delta: {},
+        payload: {},
         $state: Immutable.Map().merge(initialState),
         guid: generateGuid()
       }];
@@ -114,7 +114,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         reduce(reducersToCall, (state, reducer) => {
           // run the state through the reducer
           let nextState = resolveReducer(state, reducer);
-          // clear deltaMaps for the next cycle and create new immutable list
+          // clear action requests for the next cycle and create new immutable list
           $$reducers = $$reducers.update(reducer.index, r => {
             r.requests = [];
             return r;
@@ -139,20 +139,20 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @returns the updated state
       */
 			function resolveReducer(lastState, reducer){
-        let req, resolver;
+        let req;
 
         switch((reducer.strategy || "").toLowerCase()){
           case (Action.strategies.COMPOUND.toLowerCase()):
-            // reduce down all the deltas
+            // reduce down all the requested invocations
             return reduce(reducer.requests, (state, r) => {
-              return resolveDelta(state, r.delta, reducer, r.token);
+              return resolveDelta(state, r.payload, reducer, r.token);
             }, lastState);
           case (Action.strategies.HEAD.toLowerCase()):
-            // transform using the first delta queued
+            // transform using the first requested invocation queued
             req = reducer.requests[0];
-            return resolveDelta(lastState, req.delta, reducer, req.token);
+            return resolveDelta(lastState, req.payload, reducer, req.token);
           case (Action.strategies.TAIL.toLowerCase()):
-            // resolve using the last delta queued
+            // resolve using the last request invocation queued
             req = reducer.requests.pop();
             return resolveDelta(lastState, req.payload, reducer, req.token);
           default:
@@ -173,7 +173,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       */
 			function resolveDelta(lastState, payload, reducer, callToken){
         let guid = generateGuid();
-        let undoInvoke = () => undo(($$index + 1), guid);
+        let undoInvoke = undo.bind(null, $$index + 1, guid);
         let actionInvoke = (p0) => reducer.$invoke(lastState, p0, undoInvoke, callToken);
 
         let meta = {
@@ -239,8 +239,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           $$history = $$history.slice(0, $$index + 1);
           // add new entry to history
           $$history.push({
-            reducer_invoked: meta.reducerIndex,
-            delta: meta.delta,
+            reducer_invoked: meta.reducer_index,
+            payload: meta.payload,
             $state: nextImmutableState,
             guid: meta.guid
           });
@@ -258,6 +258,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         // and an undo could break the history tree in unpredicatable ways
         if($$history[atIndex] && $$history[atIndex].guid === guid){
 
+
           let originalHistory = $$history[atIndex];
           let lastHistory = $$history[atIndex - 1];
 
@@ -273,7 +274,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           // duplicate the history state at cachedIndex as if action was never called
           $$history[atIndex] = {
             reducer_invoked: 0,
-            delta: {},
+            payload: {},
             $state: lastHistory.$state,
             guid: originalHistory.guid
           }
@@ -299,10 +300,10 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         .slice(fromIndex)
         .reduce((last, curr, i) => {
           let reducerToApply = $$reducers.toJS()[curr.reducer_invoked];
-          let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.delta);
+          let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.payload);
           let revisedHistory = {
             reducer_invoked: curr.reducer_invoked,
-            delta: curr.delta,
+            payload: curr.payload,
             $state: last.$state.mergeDeepWith(merger, revisedState),
             guid: curr.guid
           }
@@ -321,10 +322,10 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @desc queue a reduce cycle on next tick
       * @private
       */
-      function queueReduceCycle(index, token, delta){
-        // update reducer hash in $$reducers with deltaMap
+      function queueReduceCycle(index, token, payload){
+        // update reducer hash in $$reducers with action's payload
         $$reducers = $$reducers.update(index, reducer => {
-          reducer.requests.push({delta: delta, token: token});
+          reducer.requests.push({payload: payload, token: token});
           return reducer;
         });
 
@@ -482,7 +483,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           $$index = 0;
         } else {
           // soft reset, push the initial state to the end of the $$history stack
-          $replace(this.getInitialState());
+          action_replaceState(this.getInitialState());
         }
 
         this.trigger();
