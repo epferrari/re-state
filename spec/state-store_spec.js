@@ -2,8 +2,9 @@
 
 import Promise from 'bluebird';
 import {Store, Action} from '../src/apheleia';
+import _ from 'lodash';
 
-
+/*
 const waitFor = (predicate, cb, maxWait) => {
   let finish = () => {
     clearTimeout($to)
@@ -35,12 +36,13 @@ const waitsFor = (spec, done, maxWait) => {
   }, 5)
   let $to = setTimeout(finish, maxWait || 5000)
 }
+*/
 
 describe("State Store", () => {
   var store, tick;
 
   beforeEach(() => {
-    //jasmine.clock().install()
+    jasmine.clock().install()
     tick = (cb, wait) => setTimeout(cb, wait);
   });
 
@@ -59,11 +61,11 @@ describe("State Store", () => {
       expect(store.state.rabbit).toEqual("MQ");
     });
 
-    it("initializes with an `immutable` emitter property", () => {
+    it("initializes with an immutable _emitter property", () => {
       store = new Store();
-      expect(store.emitter).toBeDefined();
+      expect(store._emitter).toBeDefined();
       expect(() => {
-        return store.emitter = true;
+        return store._emitter = true;
       }).toThrow();
     });
 
@@ -73,7 +75,7 @@ describe("State Store", () => {
       expect( () => { store.reducers = []} ).toThrow();
     });
 
-    it("adds 3 initial reducers, a noop and a setState, and a replaceState reducer",() => {
+    it("adds 3 initial reducers, a noOp and a setState, and a replaceState reducer",() => {
       store = new Store();
       expect(store.reducers.length).toEqual(3);
     });
@@ -283,7 +285,7 @@ describe("State Store", () => {
     });
   });
 
-  fdescribe("middleware", () => {
+  xdescribe("middleware", () => {
     let mw,
         callOrder = [],
         log = [],
@@ -502,7 +504,7 @@ describe("State Store", () => {
 
 
 
-    fdescribe("when there are multiple actions invoked", () => {
+    describe("when there are multiple actions invoked", () => {
       it("gets called for every action that will update state history", (done) => {
         addItem("01")
         addItem("01")

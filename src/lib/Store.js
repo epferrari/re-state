@@ -30,7 +30,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           $$middleware,
           emitter,
           trigger,
-          currentState;
+          currentState,
+          reducePending = false;
 
 
 
@@ -64,7 +65,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           return acc;
         }, {});
       };
-      trigger = () => emitter.emit(CHANGE_EVENT, currentState());
+
 
       getter(this, 'reducers', () => $$reducers.toJS() );
       getter(this, 'previousStates', () => $$history.length);
@@ -75,15 +76,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
 
-      /**
-      * @name trigger
-      * @desc trigger all listeners with the current state
-      * @method
-      * @instance
-      * @fires CHANGE_EVENT
-      * @memberof StateStore
-      */
-      this.trigger = trigger;
+
+      trigger = () => this.trigger();
 
 
 
@@ -104,8 +98,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
 			/**
+      * @name executeReduceCycle
       *
-      * @desc reduce a series of new states from pending $$reducers
+      * @desc resolve a series of new states from pending $$reducers
       * @private
       */
       function executeReduceCycle(previousState){
@@ -116,35 +111,40 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           .sortBy(reducer => reducer.index)
           .value()
 
-        return Promise.reduce(reducersToCall, (state, reducer) => {
+        reduce(reducersToCall, (state, reducer) => {
           // run the state through the reducer
-          return resolveReducer(state, reducer)
-            .then(newState => {
-              // clear deltaMaps for the next cycle and create new immutable list
-              $$reducers = $$reducers.update(reducer.index, r => {
-                r.requests = [];
-                return r;
-              });
-              return newState;
-            })
+          let nextState = resolveReducer(state, reducer);
+          // clear deltaMaps for the next cycle and create new immutable list
+          $$reducers = $$reducers.update(reducer.index, r => {
+            r.requests = [];
+            return r;
+          });
+          return nextState;
         }, merge({}, previousState) )
-        .bind(this)
-        .then(() => {
-          // notify on change
-          if(initialIndex !== $$index)
-            trigger();
-        })
+
+        // notify on change
+        if(initialIndex !== $$index)
+          trigger();
+
+        // reset for next reduce cycle
+        reducePending = false;
       }
 
 
-
+      /**
+      * @name resolveReducer
+      *
+      * @desc resolve an action's invocation against the last state according
+      *   to the strategy defined for the action
+      * @returns the updated state
+      */
 			function resolveReducer(lastState, reducer){
         let req, resolver;
 
         switch((reducer.strategy || "").toLowerCase()){
           case (Action.strategies.COMPOUND.toLowerCase()):
             // reduce down all the deltas
-            return Promise.reduce(reducer.requests, (state, r) => {
+            return reduce(reducer.requests, (state, r) => {
               return resolveDelta(state, r.delta, reducer, r.token);
             }, lastState);
           case (Action.strategies.HEAD.toLowerCase()):
@@ -154,15 +154,23 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           case (Action.strategies.TAIL.toLowerCase()):
             // resolve using the last delta queued
             req = reducer.requests.pop();
-            return resolveDelta(lastState, req.delta, reducer, req.token);
+            return resolveDelta(lastState, req.payload, reducer, req.token);
           default:
             // use tailing strategy
             req = reducer.requests.pop();
-            return resolveDelta(lastState, req.delta, reducer, req.token);
+            return resolveDelta(lastState, req.payload, reducer, req.token);
         }
       }
 
-
+      /**
+      * @name resolveDelta
+      *
+      * @desc resolve a delta (difference) between the result of a sinlge action
+      * invoked with `payload` and the last transient state. Applies middleware and
+      *   makes an entry in the history stack
+      * @returns next state after middleware has been applied and state has been
+      *   set in history
+      */
 			function resolveDelta(lastState, payload, reducer, callToken){
         let guid = generateGuid();
         let undoInvoke = () => undo(($$index + 1), guid);
@@ -180,8 +188,70 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
       }
 
+      /**
+      * @name applyMiddleware
+      *
+      * @desc iterate over all middleware when setting a new state
+      * @returns a function to be called with an action's payload, which in turn
+      * returns the next state, aka the result of `pushState`
+      */
+      function applyMiddleware(actionInvoke, meta){
+        // ensure meta is immutable in each middleware
+        let getMeta = () => meta
+
+        if($$middleware.length){
+          let middleware, getNext;
+
+          middleware = $$middleware.map(m => m)
+          getNext = i => payload_n => {
+            let n = (i + 1);
+            if(!payload_n)
+              throw new InvalidReturnError();
+            if(middleware[n])
+              return middleware[n](() => payload_n, getNext(n), getMeta());
+          };
+          // final function of the middleware stack is to apply a state update
+          middleware.push(pushState);
+
+          return payload_0 => middleware[0](() => actionInvoke(payload_0), getNext(0), getMeta());
+        } else {
+          return payload_0 => pushState(() => actionInvoke(payload_0), 1, getMeta());
+        }
+      }
+
+      /**
+      *
+      * @name pushState
+      * @desc function with middleware signature called as the last middleware
+      * in the stack to create a new state in history
+      * @returns a new state object
+      */
+      function pushState(getNextState, noop, meta){
+        let nextState, nextImmutableState;
+
+        nextState = getNextState();
+        if( !isPlainObject(nextState) ) throw new InvalidReturnError();
+
+        nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, nextState);
+        // add a new state to the $$history and increment index
+        // return state to the next reducer
+        if(!Immutable.is($$history[$$index].$state, nextImmutableState)){
+          $$history = $$history.slice(0, $$index + 1);
+          // add new entry to history
+          $$history.push({
+            reducer_invoked: meta.reducerIndex,
+            delta: meta.delta,
+            $state: nextImmutableState,
+            guid: meta.guid
+          });
+          // update the pointer to new state in $$history
+          $$index++;
+        }
+        return nextState;
+      }
 
 
+      // syncronous
 			function undo(atIndex, guid){
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
@@ -246,73 +316,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
 
-			// returns a function to be called with an action's payload
-      function applyMiddleware(actionInvoke, meta){
-        if($$middleware.length){
-          let middleware, getMeta, getNext;
-
-          middleware = $$middleware.map(m => m)
-          // ensure meta is immutable in each middleware
-          getMeta = () => meta
-          getNext = i => payload_n => {
-            let n = (i + 1);
-            if(!payload_n)
-              throw new InvalidReturnError();
-            if(middleware[n])
-              return middleware[n](() => payload_n, getNext(n), getMeta());
-          };
-          // final function of the middleware stack is to apply a state update
-          middleware.push(pushState);
-
-          return payload_0 => middleware[0](() => actionInvoke(payload_0), getNext(0), getMeta());
-        } else {
-          return payload_0 => pushState(() => payload_0, 1, getMeta());
-        }
-      }
-
-      // pushState function with middleware signature
-			// called as the last middleware in the stack to create a new state
-      // returns a promise
-      function pushState(getNextState, noop, meta){
-        return new Promise((resolve, reject) => {
-          let nextState, nextImmutableState;
-
-          nextState = getNextState();
-          if( !isPlainObject(nextState) ) throw new InvalidReturnError();
-
-          nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, nextState);
-          // add a new state to the $$history and increment index
-          // return state to the next reducer
-          if(!Immutable.is($$history[$$index].$state, nextImmutableState)){
-            $$history = $$history.slice(0, $$index + 1);
-            // add new entry to history
-            $$history.push({
-              reducer_invoked: meta.reducerIndex,
-              delta: meta.delta,
-              $state: nextImmutableState,
-              guid: meta.guid
-            });
-            // update the pointer to new state in $$history
-            $$index++;
-          }
-
-          resolve(nextState);
-        })
-      }
-
-
-
-
-
-
-
-
-
-
-
-
-
-      let reducePending = false;
       /**
       *
       * @desc queue a reduce cycle on next tick
@@ -328,10 +331,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         // defer a state reduction on the next tick if one isn't already queued
         if(!reducePending){
           reducePending = true;
-          executeReduceCycle(currentState()).then(() => {reducePending = false})
-          //setTimeout(() => {
-          //  executeReduceCycle(currentState()).then(() => {reducePending = false})
-          //}, 0);
+          setTimeout(() => {
+            executeReduceCycle(currentState())
+          }, 0);
         }
       };
 
@@ -343,11 +345,11 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
           let reducer = {
             name: action.$$name,
-            $invoke: (lastState, delta, undoFn, token) => {
-              return action.$$invoke(lastState, delta, undoFn, token);
+            $invoke: (lastState, payload, undoFn, token) => {
+              return action.$$invoke(lastState, payload, undoFn, token);
             },
             index: index,
-            strategy: strategy,
+            strategy: strategy || "TAIL",
             requests: []
           };
 
@@ -356,7 +358,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             $$reducers = $$reducers.push(reducer);
 
             // kick off a reduce cycle when the reducer action is called anywhere in the app
-            let handler = (payload) => queueReduceCycle(index, payload.token, payload.delta);
+            let handler = (a) => queueReduceCycle(index, a.token, a.payload);
             action.$$register(handler);
 
             let registration = {action: action.$$name, index: index}
@@ -614,16 +616,32 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     /**
     *
     * @name addListener
-    * @desc add listener for changes to the store state
+    * @desc subscribe a function to changes in store state
     * @param {function} listener
     * @param {object} [thisBinding=Object.create(null)]
-    * @returns {function} an unlisten function for the listener
+    * @returns {function} an unsubscribe function for the listener
     * @method
     * @instance
     * @memberof StateStore
     */
     addListener(listener, thisBinding){
       return this._emitter.on(CHANGE_EVENT, listener, thisBinding);
+    }
+
+    onchange(listener, thisBinding){
+      return this.addListener(listener, thisBinding);
+    }
+
+    /**
+    * @name trigger
+    * @desc trigger all listeners with the current state
+    * @method
+    * @instance
+    * @fires CHANGE_EVENT
+    * @memberof StateStore
+    */
+    trigger(){
+      this._emitter.emit(CHANGE_EVENT, this.state);
     }
 
     static get errors(){

@@ -13,9 +13,9 @@ module.exports = class Action {
 		var callCount = 0;
 		var undos = {}
 
-		const functor = function functor(delta){
+		const functor = function functor(payload){
 			callCount++;
-			emitter.emit(ACTION_TRIGGERED, {token: callCount, delta: delta});
+			emitter.emit(ACTION_TRIGGERED, {token: callCount, payload: payload});
 
 			function undo(token){
 				if(undos[token]){
@@ -34,22 +34,21 @@ module.exports = class Action {
 		}
 
 		// wrap the reducer function to apply undo logic
-		const invoke = (lastState, deltaMap, undoFn, callToken) => {
+		const invoke = (lastState, payload, undoFn, callToken) => {
 			if(!undos[callToken])
 				undos[callToken] = [];
 			undos[callToken].push(undoFn);
-			return reducerFn(lastState, deltaMap);
+			return reducerFn(lastState, payload);
 		};
 
-		const onAction = (handler) => {
-			emitter.on(ACTION_TRIGGERED, handler);
-		};
 		getter(functor, 'callCount', () => callCount);
 
 		functor.$$name = name
 		functor.$$invoke = invoke
 		functor.$$type = ACTION
-		functor.$$register = onAction
+		functor.$$register = (handler) => {
+			emitter.on(ACTION_TRIGGERED, handler);
+		};
 
 		return functor;
 	}
