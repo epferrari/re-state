@@ -2,7 +2,7 @@
 
 const Action = require('./Action');
 const {getter, defineProperty} = require('./utils');
-const {ACTION, CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED} = require('./constants');
+const {ACTION, ASYNC_ACTION, CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED} = require('./constants');
 const EventEmitter = require('./EventEmitter');
 const InvalidDeltaError = require('./InvalidDeltaError');
 const InvalidReturnError = require('./InvalidReturnError');
@@ -229,6 +229,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         nextState = getNextState();
         if( !isPlainObject(nextState) ) throw new InvalidReturnError();
 
+        // remove any history past current index
+        $$history = $$history.slice(0, $$index + 1);
+
         nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, nextState);
         // add a new state to the $$history and increment index
         // return state to the next reducer
@@ -247,45 +250,46 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         return nextState;
       }
 
-
       // syncronous
 			function undo(atIndex, guid){
+        let noOp = () => {};
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
-        // and an undo could break the history tree in unpredicatable ways
+        // and an undo could break the history stack in unpredicatable ways
         if($$history[atIndex] && $$history[atIndex].guid === guid){
 
-
-          let originalHistory = $$history[atIndex];
+          let originalGuid = $$history[atIndex].guid;
           let lastHistory = $$history[atIndex - 1];
 
           let redo = () => {
-            $$history[atIndex] = originalHistory;
-            rewriteHistory(atIndex + 1);
+            // ensure that a new history tree wasn't created at an index before atIndex
+            if($$history[atIndex].guid === originalGuid){
+              $$history[atIndex] = $$history[atIndex].original;
+              rewriteHistory(atIndex + 1);
+            }
           };
 
-          if($$history[atIndex].reducer_invoked == 0)
-            // undo was already called
-            return redo;
+          if(!$$history[atIndex].reverted){
+            // duplicate the history state of originalHistory as if action was never called
+            $$history[atIndex] = {
+              reducer_invoked: 0,
+              payload: {},
+              $state: lastHistory.$state,
+              guid: originalGuid,
+              reverted: true,
+              original: $$history[atIndex]
+            }
 
-          // duplicate the history state at cachedIndex as if action was never called
-          $$history[atIndex] = {
-            reducer_invoked: 0,
-            payload: {},
-            $state: lastHistory.$state,
-            guid: originalHistory.guid
+            // revise subsequent history entries according to revised state at index
+            let fromIndex = atIndex;
+            rewriteHistory(fromIndex);
           }
-
-          // revise subsequent history entries according to revised state at targetIndex
-          rewriteHistory(atIndex);
 
           // return a function to undo the undo
           return redo;
         } else {
-          // return a no-op;
-          return () => {};
+          return noOp;
         }
-
       }
 
 
@@ -298,15 +302,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         .reduce((last, curr, i) => {
           let reducerToApply = $$reducers.toJS()[curr.reducer_invoked];
           let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.payload);
-          let revisedHistory = {
-            reducer_invoked: curr.reducer_invoked,
-            payload: curr.payload,
-            $state: last.$state.mergeDeepWith(merger, revisedState),
-            guid: curr.guid
-          }
-          // revise the entry
-          $$history[fromIndex + i] = revisedHistory;
-          return revisedHistory;
+          // update $state of the current entry
+          curr.$state = last.$state.mergeDeepWith(merger, revisedState);
+          return ($$history[fromIndex + i] = curr);
         }, lastHistory);
 
         trigger();
@@ -320,6 +318,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @private
       */
       function queueReduceCycle(index, token, payload){
+
         // update reducer hash in $$reducers with action's payload
         $$reducers = $$reducers.update(index, reducer => {
           reducer.requests.push({payload: payload, token: token});
@@ -330,6 +329,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         if(!reducePending){
           reducePending = true;
           setTimeout(() => {
+            // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
             executeReduceCycle(currentState())
           }, 0);
         }
@@ -338,7 +338,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
       function listenToAction(action, strategy){
-        if((action.$$type == ACTION)){
+        let actionType = action.$$type;
+
+        if((actionType === ACTION || actionType === ASYNC_ACTION)){
           let index = $$reducers.size;
 
           let reducer = {
@@ -355,9 +357,13 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           if(!contains($$reducers.toJS(), reducer)){
             $$reducers = $$reducers.push(reducer);
 
-            // kick off a reduce cycle when the reducer action is called anywhere in the app
-            let handler = (a) => queueReduceCycle(index, a.token, a.payload);
-            action.$$register(handler);
+            if(actionType === ACTION){
+              // kick off a reduce cycle when the reducer action is called anywhere in the app
+              let handler = (a) => queueReduceCycle(index, a.token, a.payload);
+              action.$$register(handler);
+            }else if(actionType === ASYNC_ACTION){
+              let handler;
+            }
 
             let registration = {action: action.$$name, index: index}
             emitter.emit(ACTION_ADDED, registration)
