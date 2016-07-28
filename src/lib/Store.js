@@ -29,7 +29,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           emitter,
           trigger,
           currentState,
-          reducePending = false;
+          reducePending = false,
+          pendingRevisions = [];
 
 
 
@@ -91,8 +92,41 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           return next;
       };
 
+      /**
+      *
+      * @desc queue a reduce cycle on next tick
+      * @private
+      */
+      function queueReduceCycle(index, token, payload){
+        if(arguments.length){
+          // update reducer hash in $$reducers with action's payload
+          $$reducers = $$reducers.update(index, reducer => {
+            reducer.requests.push({payload: payload, token: token});
+            return reducer;
+          });
+        }
 
+        // defer a state reduction on the next tick if one isn't already queued
+        if(!reducePending || pendingRevisions.length){
+          reducePending = true;
+          setTimeout(() => {
+            // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
 
+            // reduce over any queued actions and undo/redo revisions and
+            // determine whether to push a state change
+            let shouldTrigger = executeReduceCycle(currentState());
+
+            if(pendingRevisions.length){
+              shouldTrigger = true;
+              pendingRevisions.forEach(reviseHistory);
+              pendingRevisions = [];
+            }
+
+            if(shouldTrigger) trigger();
+
+          }, 0);
+        }
+      };
 
 
 			/**
@@ -118,14 +152,13 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             return r;
           });
           return nextState;
-        }, merge({}, previousState) )
-
-        // notify on change
-        if(initialIndex !== $$index)
-          trigger();
+        }, merge({}, previousState) );
 
         // reset for next reduce cycle
         reducePending = false;
+
+        // was history updated?
+        return (initialIndex !== $$index);
       }
 
 
@@ -250,9 +283,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         return nextState;
       }
 
-      // syncronous
 			function undo(atIndex, guid){
-        let noOp = () => {};
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history stack in unpredicatable ways
@@ -265,7 +296,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             // ensure that a new history tree wasn't created at an index before atIndex
             if($$history[atIndex].guid === originalGuid){
               $$history[atIndex] = $$history[atIndex].original;
-              rewriteHistory(atIndex + 1);
+              queueHistoryRevision(atIndex + 1);
             }
           };
 
@@ -282,19 +313,23 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
             // revise subsequent history entries according to revised state at index
             let fromIndex = atIndex;
-            rewriteHistory(fromIndex);
+            queueHistoryRevision(fromIndex);
           }
 
           // return a function to undo the undo
           return redo;
         } else {
-          return noOp;
+          // return noOp
+          return () => {};
         }
       }
 
+      function queueHistoryRevision(fromIndex){
+        pendingRevisions.push( fromIndex );
+        queueReduceCycle();
+      }
 
-      // syncronous
-			function rewriteHistory(fromIndex){
+			function reviseHistory(fromIndex){
         let lastHistory = $$history[fromIndex - 1];
 
         $$history
@@ -306,34 +341,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           curr.$state = last.$state.mergeDeepWith(merger, revisedState);
           return ($$history[fromIndex + i] = curr);
         }, lastHistory);
-
-        trigger();
       }
 
-
-
-      /**
-      *
-      * @desc queue a reduce cycle on next tick
-      * @private
-      */
-      function queueReduceCycle(index, token, payload){
-
-        // update reducer hash in $$reducers with action's payload
-        $$reducers = $$reducers.update(index, reducer => {
-          reducer.requests.push({payload: payload, token: token});
-          return reducer;
-        });
-
-        // defer a state reduction on the next tick if one isn't already queued
-        if(!reducePending){
-          reducePending = true;
-          setTimeout(() => {
-            // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
-            executeReduceCycle(currentState())
-          }, 0);
-        }
-      };
 
 
 
@@ -507,7 +516,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           throw new InvalidIndexError();
         } else if(index >= 0 && index <= $$history.length -1){
           $$index = index;
-          $$history = $$history.slice(0, $$index);
+          $$history = $$history.slice(0, $$index + 1);
           this.trigger();
         }
       }.bind(this);
@@ -516,7 +525,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     *
     * @name fastForward
     * @desc move the StateStore's history index ahead `n` frames. Does not alter history.
-    * @param {int} n=1 - how many frames to fast froward. Cannot fast forward past the last frame.
+    * @param {int} n=1 - how many frames to fast forward. Cannot fast forward past the last frame.
     * @method
     * @instance
     * @memberof StateStore

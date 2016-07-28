@@ -353,6 +353,7 @@ describe("State Store", () => {
         expect(store.state).toEqual({rabbit: "MQ", things: ["A", "B", "C"]});
 
         let redoAddThingA = undoAddThingA();
+        jasmine.clock().tick(0);
         // calling undo on addThingA recalculates the state without the delta at version 2
         expect(store.state).toEqual({rabbit: "MQ", things: ["B", "C"]});
 
