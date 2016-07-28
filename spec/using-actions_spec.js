@@ -118,7 +118,7 @@ describe("transforming state through actions", () => {
         let redoAdd = undoAdd()
         expect(store.trigger).toHaveBeenCalledTimes(2)
         expect(store.previousStates).toBe(2)
-      })
+      });
     });
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {

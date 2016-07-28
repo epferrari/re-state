@@ -344,7 +344,7 @@ describe("State Store", () => {
         spyOn(store, 'trigger');
 
         let undoAddThingA = addThing("A"); // resolves to state 2
-        addThing("B"); // resolves to state 3
+        let undoAddThingB = addThing("B"); // resolves to state 3
         addThing("C"); // resolves to state 4
 
         expect(store.previousStates).toEqual(1);
@@ -352,7 +352,7 @@ describe("State Store", () => {
         expect(store.previousStates).toEqual(4);
         expect(store.state).toEqual({rabbit: "MQ", things: ["A", "B", "C"]});
 
-        undoAddThingA();
+        let redoAddThingA = undoAddThingA();
         // calling undo on addThingA recalculates the state without the delta at version 2
         expect(store.state).toEqual({rabbit: "MQ", things: ["B", "C"]});
 
@@ -370,7 +370,8 @@ describe("State Store", () => {
         expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
 
         store.trigger.calls.reset();
-        undoAddThingA();
+        undoAddThingB();
+        redoAddThingA();
 
         expect(store.trigger).not.toHaveBeenCalled();
         // state 2 was not affected by the undo function that used to point there
