@@ -124,6 +124,20 @@ describe("transforming state through actions", () => {
         expect(store.trigger).toHaveBeenCalledTimes(2)
         expect(store.previousStates).toBe(2)
       });
+
+      fit("executes asyncronously", () => {
+        let undoAdd = addItem(0);
+        expect(store.trigger).not.toHaveBeenCalled()
+        expect(store.state.cart).toEqual([])
+
+        undoAdd()
+        expect(store.trigger).not.toHaveBeenCalled()
+        expect(store.state.cart).toEqual([])
+
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(1)
+        expect(store.state.cart).toEqual([])
+      })
     });
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {

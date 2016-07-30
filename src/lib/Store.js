@@ -12,7 +12,7 @@ const InvalidIndexError = require('./InvalidIndexError');
 
 module.exports = function StoreFactory(Immutable, _, generateGuid){
 
-  let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains} = _;
+  let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains, findIndex} = _;
 
   return class StateStore {
     /**
@@ -22,7 +22,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     */
     constructor(initialState, middleware){
 
-      var $$history,
+      var $$container_id = generateGuid(),
+          $$history,
           $$index,
           $$reducers,
           $$middleware,
@@ -110,6 +111,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         if(!reducePending || pendingRevisions.length){
           reducePending = true;
           setTimeout(() => {
+            console.log('pending revisions.length', pendingRevisions.length)
             // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
 
             // reduce over any queued actions and undo/redo revisions and
@@ -117,6 +119,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             let shouldTrigger = executeReduceCycle(currentState());
 
             if(pendingRevisions.length){
+              console.log('pending revisions');
               shouldTrigger = true;
               pendingRevisions.forEach(reviseHistory);
               pendingRevisions = [];
@@ -170,52 +173,53 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @returns the updated state
       */
 			function resolveReducer(lastState, reducer){
-        let req;
-
         switch((reducer.strategy || "").toLowerCase()){
           case (Action.strategies.COMPOUND.toLowerCase()):
             // reduce down all the requested invocations
-            return reduce(reducer.requests, (state, r) => {
-              return resolveDelta(state, r.payload, reducer, r.token);
+            return reduce(reducer.requests, (state, request) => {
+              return resolveDelta(state, reducer, request);
             }, lastState);
           case (Action.strategies.HEAD.toLowerCase()):
             // transform using the first requested invocation queued
-            req = reducer.requests[0];
-            return resolveDelta(lastState, req.payload, reducer, req.token);
+            return resolveDelta(lastState, reducer, reducer.requests[0]);
           case (Action.strategies.TAIL.toLowerCase()):
             // resolve using the last request invocation queued
-            req = reducer.requests.pop();
-            return resolveDelta(lastState, req.payload, reducer, req.token);
+            return resolveDelta(lastState, reducer, reducer.requests.pop());
           default:
             // use tailing strategy
-            req = reducer.requests.pop();
-            return resolveDelta(lastState, req.payload, reducer, req.token);
+            return resolveDelta(lastState, reducer, reducer.requests.pop());
         }
       }
 
       /**
       * @name resolveDelta
       *
-      * @desc resolve a delta (difference) between the result of a sinlge action
+      * @desc resolve a delta (difference) between the result of a single action
       * invoked with `payload` and the last transient state. Applies middleware and
       *   makes an entry in the history stack
       * @returns next state after middleware has been applied and state has been
       *   set in history
       */
-			function resolveDelta(lastState, payload, reducer, callToken){
+			function resolveDelta(lastState, reducer, request){
         let guid = generateGuid();
-        let undoInvoke = undo.bind(null, $$index + 1, guid);
-        let actionInvoke = (p0) => reducer.$invoke(lastState, p0, undoInvoke, callToken);
+        //let undoInvoke = undo.bind(null, $$index + 1, guid);
+        let auditRecord = {
+          $$container_id: $$container_id,
+          $$index: ($$index + 1),
+          guid: guid
+        };
+        let reducerInvoke = (p0) => reducer.invoke(lastState, p0, auditRecord, request.token);
 
         let meta = {
           guid: guid,
           action: reducer.name,
-          payload: payload,
+          canceled: request.canceled,
+          payload: request.payload,
           reducer_index: reducer.index,
           last_state: JSON.stringify(lastState)
         };
 
-        return applyMiddleware(actionInvoke, meta)(payload);
+        return applyMiddleware(reducerInvoke, meta)(payload);
 
       }
 
@@ -226,7 +230,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @returns a function to be called with an action's payload, which in turn
       * returns the next state, aka the result of `pushState`
       */
-      function applyMiddleware(actionInvoke, meta){
+      function applyMiddleware(reducerInvoke, meta){
         // ensure meta is immutable in each middleware
         let getMeta = () => meta
 
@@ -243,9 +247,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           };
           // final function of the middleware stack is to apply a state update
           middleware.push(pushState);
-          return payload_0 => middleware[0](() => actionInvoke(payload_0), getNext(0), getMeta());
+          return payload_0 => middleware[0](() => reducerInvoke(payload_0), getNext(0), getMeta());
         } else {
-          return payload_0 => pushState(() => actionInvoke(payload_0), 1, getMeta());
+          return payload_0 => pushState(() => reducerInvoke(payload_0), 1, getMeta());
         }
       }
 
@@ -279,6 +283,10 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           });
           // update the pointer to new state in $$history
           $$index++;
+
+          // ensure a history state is created, but immediately revert it
+          if(meta.canceled)
+            undo($$index, meta.guid);
         }
         return nextState;
       }
@@ -288,10 +296,12 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history stack in unpredicatable ways
         if($$history[atIndex] && $$history[atIndex].guid === guid){
+          console.log('undoing')
 
-          let originalGuid = $$history[atIndex].guid;
+          //let originalGuid = $$history[atIndex].guid;
           let lastHistory = $$history[atIndex - 1];
 
+          /*
           let redo = () => {
             // ensure that a new history tree wasn't created at an index before atIndex
             if($$history[atIndex].guid === originalGuid){
@@ -299,6 +309,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
               queueHistoryRevision(atIndex + 1);
             }
           };
+          */
 
           if(!$$history[atIndex].reverted){
             // duplicate the history state of originalHistory as if action was never called
@@ -306,7 +317,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
               reducer_invoked: 0,
               payload: {},
               $state: lastHistory.$state,
-              guid: originalGuid,
+              guid: guid,
               reverted: true,
               original: $$history[atIndex]
             }
@@ -316,11 +327,20 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             queueHistoryRevision(fromIndex);
           }
 
-          // return a function to undo the undo
-          return redo;
+          return true;
         } else {
-          // return noOp
-          return () => {};
+          return false;
+        }
+      }
+
+      function redo(atIndex, guid){
+        // ensure that a new history tree wasn't created at an index before atIndex
+        if($$history[atIndex].guid === guid){
+          $$history[atIndex] = $$history[atIndex].original;
+          queueHistoryRevision(atIndex + 1);
+          return true;
+        } else {
+          return false;
         }
       }
 
@@ -344,9 +364,16 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       }
 
 
+      function updatePendingReducer(reducerIndex, requestToken, config){
+        // cancel the action request if it is pending
+        $$reducers = $$reducers.update(index, reducer => {
+          let pIndex = findIndex(reducer.requests(r => (r.token === requestToken));
+          reducer.requests[pIndex].canceled = config.canceled;
+          return reducer;
+        });
+      }
 
-
-      function listenToAction(action, strategy){
+      function listenToAction(action, reducerFn, strategy){
         let actionType = action.$$type;
 
         if((actionType === ACTION || actionType === ASYNC_ACTION)){
@@ -354,8 +381,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
           let reducer = {
             name: action.$$name,
-            $invoke: (lastState, payload, undoFn, token) => {
-              return action.$$invoke(lastState, payload, undoFn, token);
+            invoke: (lastState, payload, auditRecord, token) => {
+              action.didInvoke(auditRecord, token)
+              return reducerFn(lastState, payload);
             },
             index: index,
             strategy: strategy || "TAIL",
@@ -368,8 +396,38 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
             if(actionType === ACTION){
               // kick off a reduce cycle when the reducer action is called anywhere in the app
-              let handler = (a) => queueReduceCycle(index, a.token, a.payload);
-              action.$$register(handler);
+              action.onTrigger(
+                (a) => queueReduceCycle(index, a.token, a.payload)
+              );
+
+              action.onUndo(
+                (token, auditRecords) => {
+                  // cancel invocation request if pending
+                  updatePendingReducer(index, token, {canceled: true})
+
+                  // if not pending, then an action alters history and it will have
+                  // sent an audit record to the action to cache by its callCount token.
+                  // Actions may be listened to by multiple state containers, and may
+                  // therefore have multiple audit records attached to each call.
+                  // However, this state container will only execute an undo when the guid
+                  // of the audit record matches the index of the state it changed, so
+                  // we can count on it to be unique against this state container
+                  let auditRecord = auditRecords.find(ar => ar.$$container_id === $$container_id)
+                  auditRecord && undo(auditRecord.$$index, auditRecord.guid))
+                }
+              )
+
+              action.onRedo(
+                (token, auditRecords) => {
+                  // resume normal workflow for undone pending reduce request
+                  updatePendingReducer(index, token, {canceled: false})
+                  // see above for iteration reasoning
+                  let auditRecord = auditRecords.find(ar => ar.$$container_id === $$container_id)
+                  auditRecord && redo(auditRecord.$$index, auditRecord.guid))
+                }
+              )
+
+
             }else if(actionType === ASYNC_ACTION){
               let handler;
             }
