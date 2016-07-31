@@ -68,7 +68,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
       getter(this, 'reducers', () => $$reducers.toJS() );
-      getter(this, 'previousStates', () => $$history.length);
+      getter(this, 'age', () => $$history.length);
       getter(this, 'history', () => $$history);
       getter(this, 'index', () => $$index);
       getter(this, 'state', () => currentState());
@@ -208,13 +208,14 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           $$index: ($$index + 1),
           guid: guid
         };
-        let reducerInvoke = (p0) => reducer.invoke(lastState, p0, auditRecord, request.token);
+        let {token, payload, canceled} = request;
+        let reducerInvoke = (p0) => reducer.invoke(lastState, p0, auditRecord, token);
 
         let meta = {
           guid: guid,
           action: reducer.name,
-          canceled: request.canceled,
-          payload: request.payload,
+          canceled: canceled,
+          payload: payload,
           reducer_index: reducer.index,
           last_state: JSON.stringify(lastState)
         };
@@ -356,7 +357,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         .slice(fromIndex)
         .reduce((last, curr, i) => {
           let reducerToApply = $$reducers.toJS()[curr.reducer_invoked];
-          let revisedState = reducerToApply.$invoke(last.$state.toJS(), curr.payload);
+          let revisedState = reducerToApply.invoke(last.$state.toJS(), curr.payload);
           // update $state of the current entry
           curr.$state = last.$state.mergeDeepWith(merger, revisedState);
           return ($$history[fromIndex + i] = curr);
@@ -364,11 +365,12 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       }
 
 
-      function updatePendingReducer(reducerIndex, requestToken, config){
+      function updatePendingReducer(atIndex, requestToken, config){
         // cancel the action request if it is pending
-        $$reducers = $$reducers.update(index, reducer => {
-          let pIndex = findIndex(reducer.requests(r => (r.token === requestToken));
-          reducer.requests[pIndex].canceled = config.canceled;
+        $$reducers = $$reducers.update(atIndex, reducer => {
+          let pIndex = findIndex(reducer.requests, r => (r.token === requestToken));
+          if(pIndex >= 0)
+            reducer.requests[pIndex].canceled = config.canceled;
           return reducer;
         });
       }
@@ -397,13 +399,13 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             if(actionType === ACTION){
               // kick off a reduce cycle when the reducer action is called anywhere in the app
               action.onTrigger(
-                (a) => queueReduceCycle(index, a.token, a.payload)
+                (request) => queueReduceCycle(index, request.token, request.payload)
               );
 
               action.onUndo(
                 (token, auditRecords) => {
                   // cancel invocation request if pending
-                  updatePendingReducer(index, token, {canceled: true})
+                  updatePendingReducer(index, token, {canceled: true});
 
                   // if not pending, then an action alters history and it will have
                   // sent an audit record to the action to cache by its callCount token.
@@ -412,18 +414,22 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
                   // However, this state container will only execute an undo when the guid
                   // of the audit record matches the index of the state it changed, so
                   // we can count on it to be unique against this state container
-                  let auditRecord = auditRecords.find(ar => ar.$$container_id === $$container_id)
-                  auditRecord && undo(auditRecord.$$index, auditRecord.guid))
+                  let auditRecord = auditRecords.find(ar => {
+                    return (ar.$$container_id === $$container_id);
+                  });
+                  auditRecord && undo(auditRecord.$$index, auditRecord.guid);
                 }
-              )
+              );
 
               action.onRedo(
                 (token, auditRecords) => {
                   // resume normal workflow for undone pending reduce request
                   updatePendingReducer(index, token, {canceled: false})
                   // see above for iteration reasoning
-                  let auditRecord = auditRecords.find(ar => ar.$$container_id === $$container_id)
-                  auditRecord && redo(auditRecord.$$index, auditRecord.guid))
+                  let auditRecord = auditRecords.find(ar => {
+                    return (ar.$$container_id === $$container_id);
+                  });
+                  auditRecord && redo(auditRecord.$$index, auditRecord.guid);
                 }
               )
 
@@ -444,44 +450,41 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
     /**
     *
-    * @name listenTo
-    * @param {function | array} action - created with `new Restate.Action(<reducer_function>)`
-    *   If passed an array, strategies can be defined like so: `[{action: <Action>[, strategy: <strategy>]}]`.
-    *   Object definitions and plain actions can be combined in the same array:
-    *   `[<Action>, {action: <Action>, strategy: <strategy>}, <Action>]`
+    * @name on
+    * @param {Action} action - created with `new Action(action_name)`
+    *   If passed an array, strategies can be defined like so:
+    *   `[{action: <Action>, reducer: <function>,[, strategy: <strategy>]}]`.
+    * @param {function} reducer - the reducer function to execute when the action is called
     * @param {string} [strategy=tail] - one of `'compound'`, `'lead'`, or `'tail'`
-    * @desc execute a reduce cycle when the action is called
+    * @desc invoke a reducer against the current state with the payload passed to
+    *   action. `reducer` is invoked asyncronously in order relative to other actions being
+    *   listened to with `<StateContainer>.on`
     * @method
     * @instance
     * @memberof StateStore
     */
-      this.listenTo = function listenTo(action, strategy){
-        if(isFunction(action)){
-          return listenToAction(action, strategy);
+      this.on = function on(action, reducer, strategy){
+        if( isFunction(action) ){
+          return listenToAction(action, reducer, strategy);
         } else if(isArray(action)){
-          return action.reduce((acc, a) => {
-            if(isFunction(a)){
-              // [<Action>, <Action>, ...]
-              acc[a.$$name] = listenToAction(a);
-            } else if(isPlainObject(a)){
+          return action.reduce((acc, o) => {
+            if(isPlainObject(o)){
               // [{action: <Action>[,strategy: <strategy>], ...}]
-              acc[a.action.$$name] = listenToAction(a.action, a.strategy);
+              acc.push( listenToAction(o.action, o.reducer, o.strategy) );
             }
             return acc;
-          }, {});
+          }, []);
         }
-      }.bind(this);
+      };
 
     // set the store's first reducer as a noop
-    let action_noOp = new Action('noop', lastState => lastState);
-    this.listenTo(action_noOp);
+    this.on(new Action('noop'), lastState => lastState);
 
     // set a second reducer to handle direct setState operations
-    let action_setState = new Action('setState', (lastState, deltaMap) => {
-      let newState = merge({}, lastState, deltaMap);
-      return newState;
-    });
-    this.listenTo(action_setState, Action.strategies.COMPOUND);
+    let action_setState = new Action("setState");
+    let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
+
+    this.on(action_setState, reducer_setState, Action.strategies.COMPOUND);
 
 
     /**
@@ -505,14 +508,15 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
       // set a third reducer that entirely replaces the state with a new state
-      let action_replaceState = new Action('replaceState', (lastState, newState) => {
+      let action_replaceState = new Action('replaceState');
+      let reducer_replaceState = (lastState, newState) => {
         return reduce(lastState, (acc, val, key) => {
           acc[key] = newState[key] || "$unset";
           return acc;
         }, newState);
-      });
+      };
 
-      this.listenTo(action_replaceState, Action.strategies.TAIL)
+      this.on(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
 
 
     /**
@@ -556,7 +560,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           action_replaceState(this.getInitialState());
         }
 
-        this.trigger();
+        trigger();
       }.bind(this);
 
     /**
@@ -575,9 +579,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         } else if(index >= 0 && index <= $$history.length -1){
           $$index = index;
           $$history = $$history.slice(0, $$index + 1);
-          this.trigger();
+          trigger();
         }
-      }.bind(this);
+      };
 
     /**
     *
@@ -596,9 +600,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           n = (n || 1)
           // ensure we don't go past the end of history
           $$index = Math.min( ($$index + Math.abs(n)), ($$history.length - 1));
-          this.trigger();
+          trigger();
         }
-      }.bind(this);
+      };
 
     /**
     *
@@ -617,9 +621,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           n = (n || 1)
           // ensure we don't go past the beginning of time
           $$index = Math.max( ($$index - Math.abs(n)), 0)
-          this.trigger();
+          trigger();
         }
-      }.bind(this);
+      };
 
     /**
     *
@@ -636,9 +640,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           throw new InvalidIndexError();
         } else if(index >= 0 && index <= $$history.length -1){
           $$index = index;
-          this.trigger();
+          trigger();
         }
-      }.bind(this);
+      };
     }
 
     /**

@@ -2,8 +2,19 @@ import Promise from 'bluebird';
 import {Store, Action} from '../src';
 import _ from 'lodash';
 
-describe("transforming state through actions", () => {
-  let store, addItem, removeItem, clearCart, updatePrice, checkout, tick;
+fdescribe("transforming state through actions", () => {
+  let store,
+    addItem,
+    onAddItem,
+    removeItem,
+    onRemoveItem,
+    clearCart,
+    onClearCart,
+    updatePrice,
+    onUpdatePrice,
+    checkout,
+    onCheckout,
+    tick;
 
   // set up some basic actions
   beforeEach(() => {
@@ -26,7 +37,8 @@ describe("transforming state through actions", () => {
     let getPrice = (id) => store.state.priceList[id] || 0
 
     // add item to the cart
-    addItem = new Action('addItem', (lastState, id) => {
+    addItem = new Action('addItem');
+    onAddItem = (lastState, id) => {
       let {cart} = lastState;
       let itemInCart = findById(id, cart);
       let itemIndex = cart.indexOf(itemInCart);
@@ -39,10 +51,11 @@ describe("transforming state through actions", () => {
       }
 
       return {cart: cart};
-    });
+    };
 
     // remove item from cart
-    removeItem = new Action('removeItem', (lastState, id) => {
+    removeItem = new Action('removeItem');
+    onRemoveItem = (lastState, id) => {
       let {cart} = lastState;
       let itemInCart = findById(id, cart);
       let itemIndex = cart.indexOf(itemInCart);
@@ -53,29 +66,32 @@ describe("transforming state through actions", () => {
         cart[itemIndex] = itemInCart;
       }
       return {cart: cart};
-    });
+    };
 
-    updatePrice = new Action('updatePrice', (lastState, newPriceRecord) => {
+    updatePrice = new Action('updatePrice');
+    onUpdatePrice = (lastState, newPriceRecord) => {
       let {priceList} = lastState.priceList;
       priceList[newPriceRecord.id] = newPriceRecord.price;
       return {priceList: priceList};
-    });
+    };
 
-    clearCart = new Action('clearCart', (lastState) => {
+    clearCart = new Action('clearCart');
+    onClearCart = (lastState) => {
       let {cart} = lastState;
       items = _.map(cart, item => {
         item.qty = 0;
         return item;
       });
       return {cart: items};
-    });
+    };
 
-    checkout = new Action('checkout', (lastState) => {
+    checkout = new Action('checkout');
+    onCheckout = (lastState) => {
       let total = lastState.cart.reduce((subTotal, item) => {
         return subTotal + (getPrice(item.id) * item.qty);
       }, 0)
       return {total: total}
-    });
+    };
   });
 
   afterEach(() => jasmine.clock().uninstall())
@@ -83,7 +99,7 @@ describe("transforming state through actions", () => {
   describe("with a single Action reducer", () => {
     describe("using Action's returned undo/redo functions", () => {
       beforeEach(() => {
-        store.listenTo(addItem)
+        store.on(addItem, onAddItem)
       });
 
       it("undoes the action's effect on state", () => {
@@ -125,7 +141,7 @@ describe("transforming state through actions", () => {
         expect(store.previousStates).toBe(2)
       });
 
-      fit("executes asyncronously", () => {
+      it("executes asyncronously", () => {
         let undoAdd = addItem(0);
         expect(store.trigger).not.toHaveBeenCalled()
         expect(store.state.cart).toEqual([])
@@ -142,7 +158,7 @@ describe("transforming state through actions", () => {
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
       beforeEach(() => {
-        store.listenTo(addItem, 'TAIL');
+        store.on(addItem, onAddItem, 'TAIL');
       });
 
       it("updates the state from the last call to reducer", () => {
@@ -197,7 +213,7 @@ describe("transforming state through actions", () => {
     });
 
     describe("using the `HEAD` strategy (Action.strategies.HEAD)", () => {
-      beforeEach(() => store.listenTo(addItem, 'HEAD'));
+      beforeEach(() => store.on(addItem, onAddItem, 'HEAD'));
 
       it("updates the state from the first call to reducer action", () => {
         expect(store.state.cart).toEqual([]);
@@ -228,11 +244,11 @@ describe("transforming state through actions", () => {
           let undoAdd1 = addItem(1);
 
           let $addItem = store.reducers[3];
-          spyOn($addItem, '$invoke').and.callThrough()
+          spyOn($addItem, 'invoke').and.callThrough()
 
           tick()
 
-          expect($addItem.$invoke).toHaveBeenCalledTimes(1);
+          expect($addItem.invoke).toHaveBeenCalledTimes(1);
           expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
           expect(store.trigger).toHaveBeenCalledTimes(1);
           store.trigger.calls.reset();
@@ -256,7 +272,7 @@ describe("transforming state through actions", () => {
     });
 
     describe("using the `COMPOUND` strategy (Action.strategies.COMPOUND)", () => {
-      beforeEach(() => store.listenTo(addItem, 'COMPOUND'));
+      beforeEach(() => store.on(addItem, onAddItem, 'COMPOUND'));
 
       it("updates the state with all results of reducer action", () => {
         expect(store.state.cart).toEqual([]);
@@ -352,15 +368,15 @@ describe("transforming state through actions", () => {
 
   describe("when multiple reducers are registered with a store", () => {
     beforeEach(() => {
-      spyOn(addItem, '$$invoke').and.callThrough()
-      spyOn(removeItem, '$$invoke').and.callThrough()
-      spyOn(clearCart, '$$invoke').and.callThrough()
-      spyOn(checkout, '$$invoke').and.callThrough()
+      spyOn(addItem,    'didInvoke').and.callThrough()
+      spyOn(removeItem, 'didInvoke').and.callThrough()
+      spyOn(clearCart,  'didInvoke').and.callThrough()
+      spyOn(checkout,   'didInvoke').and.callThrough()
 
-      store.listenTo(addItem, 'compound')
-      store.listenTo(removeItem, 'compound')
-      store.listenTo(clearCart)
-      store.listenTo(checkout)
+      store.on(addItem, onAddItem, 'compound')
+      store.on(removeItem, onRemoveItem, 'compound')
+      store.on(clearCart, onClearCart)
+      store.on(checkout, onCheckout)
     });
 
     it("invokes only the actions triggered in each reduce cycle", () => {
@@ -369,10 +385,10 @@ describe("transforming state through actions", () => {
       checkout()
 
       tick()
-      expect(addItem.$$invoke).not.toHaveBeenCalled()
-      expect(removeItem.$$invoke).toHaveBeenCalled()
-      expect(clearCart.$$invoke).not.toHaveBeenCalled()
-      expect(checkout.$$invoke).toHaveBeenCalled()
+      expect(addItem.didInvoke).not.toHaveBeenCalled()
+      expect(removeItem.didInvoke).toHaveBeenCalled()
+      expect(clearCart.didInvoke).not.toHaveBeenCalled()
+      expect(checkout.didInvoke).toHaveBeenCalled()
     });
 
     it("transforms state by invoking the reducers in the order they were listened to", () => {

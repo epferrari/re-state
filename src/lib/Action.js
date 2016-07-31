@@ -8,7 +8,7 @@ module.exports = class Action {
 	constructor(name){
 
 		const emitter = new EventEmitter();
-		var emit = emitter.emit;
+		var emit = emitter.emit.bind(emitter);
 		var callCount = 0;
 		var calls = {};
 
@@ -39,11 +39,11 @@ module.exports = class Action {
 			emitter.on(ACTION_TRIGGERED, handler)
 		});
 
-		defineProperty(functor, 'didInvoke', (token, auditRecord) => {
+		functor.didInvoke =(token, auditRecord) => {
 			if(!calls[token])
 				calls[token] = [];
 			calls[token].push(auditRecord);
-		});
+		};
 
 		defineProperty(functor, 'onUndo', (handler) => {
 			emitter.on(UNDO_ACTION, handler);
