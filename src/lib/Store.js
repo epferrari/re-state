@@ -111,7 +111,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         if(!reducePending || pendingRevisions.length){
           reducePending = true;
           setTimeout(() => {
-            console.log('pending revisions.length', pendingRevisions.length)
             // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
 
             // reduce over any queued actions and undo/redo revisions and
@@ -119,7 +118,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             let shouldTrigger = executeReduceCycle(currentState());
 
             if(pendingRevisions.length){
-              console.log('pending revisions');
               shouldTrigger = true;
               pendingRevisions.forEach(reviseHistory);
               pendingRevisions = [];
@@ -297,7 +295,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history stack in unpredicatable ways
         if($$history[atIndex] && $$history[atIndex].guid === guid){
-          console.log('undoing')
 
           //let originalGuid = $$history[atIndex].guid;
           let lastHistory = $$history[atIndex - 1];
@@ -384,7 +381,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           let reducer = {
             name: action.$$name,
             invoke: (lastState, payload, auditRecord, token) => {
-              action.didInvoke(auditRecord, token)
+              action.didInvoke(token, auditRecord)
               return reducerFn(lastState, payload);
             },
             index: index,

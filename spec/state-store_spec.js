@@ -4,7 +4,7 @@ import Promise from 'bluebird';
 import {Store, Action} from '../src';
 import _ from 'lodash';
 
-fdescribe("State Store", () => {
+describe("State Store", () => {
 
   var store, tick;
 

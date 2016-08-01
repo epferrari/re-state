@@ -39,7 +39,7 @@ module.exports = class Action {
 			emitter.on(ACTION_TRIGGERED, handler)
 		});
 
-		functor.didInvoke =(token, auditRecord) => {
+		functor.didInvoke = (token, auditRecord) => {
 			if(!calls[token])
 				calls[token] = [];
 			calls[token].push(auditRecord);
