@@ -6,23 +6,30 @@ import _ from 'lodash';
 
 describe("middleware", () => {
 
-  let store, mw,
+  let store,
+      mw,
+      tick,
       callOrder,
       log,
       caughtExceptions,
-      addItem,
-      addExtraProps;
+      addItem, handleAddItem,
+      addExtraProps, handleExtraProps;
 
   beforeEach(() => {
     jasmine.clock().install();
 
-    callOrder = [],
-    log = [],
-    caughtExceptions = [],
+    tick = () => jasmine.clock().tick(0);
+
+    callOrder = [];
+    log = [];
+    caughtExceptions = [];
 
     // create some actions
 
-    addItem = new Action('addItem', (lastState, id) => {
+    addItem = new Action('addItem');
+    addExtraProps = new Action('addExtraProps');
+
+    handleAddItem = (lastState, id) => {
       let {cart} = lastState;
       let itemIndex = _.findIndex(cart, (item) => item.id === id);
 
@@ -32,11 +39,10 @@ describe("middleware", () => {
         cart.push({id, qty: 1});
 
       return {cart};
-    });
+    };
 
-    addExtraProps = new Action('addExtraProps', (lastState, payload) => {
-      return payload;
-    });
+
+    handleExtraProps = (lastState, payload) => payload;
 
 
     // create some middleware
@@ -44,16 +50,16 @@ describe("middleware", () => {
     function exceptionHandler(prev, next, meta){
       callOrder.push('exceptionHandler')
       try {
-        return next(prev())
+        return next(prev());
       } catch(ex){
-        caughtExceptions.push(ex)
+        caughtExceptions.push(ex);
       }
     }
 
 
     function pruner(prev, next, meta){
-      callOrder.push('pruner')
-      return next(_.pick(prev(), ['cart', 'total']))
+      callOrder.push('pruner');
+      return next(_.pick(prev(), ['cart', 'total']));
     }
 
     function logger(prev, next, meta){
@@ -95,9 +101,9 @@ describe("middleware", () => {
       _.map(mw, fn => fn)
     );
 
-    store.listenTo([
-      {action: addItem, strategy: 'compound'},
-      addExtraProps
+    store.on([
+      {action: addItem, reducer: handleAddItem, strategy: 'compound'},
+      {action: addExtraProps, reducer: handleExtraProps}
     ]);
   });
 
@@ -110,7 +116,7 @@ describe("middleware", () => {
     })
 
     it("is called in the order the middleware was added to the store", () => {
-      jasmine.clock().tick(0)
+      tick()
       expect(callOrder).toEqual([
         "exceptionHandler",
         "logger",
@@ -126,7 +132,7 @@ describe("middleware", () => {
       addItem("01")
       addItem("03")
 
-      jasmine.clock().tick(0)
+      tick()
 
       expect(store.state).toEqual({
         cart:[
@@ -143,10 +149,23 @@ describe("middleware", () => {
   it("operates on the new state before it gets merged into history", () => {
     addExtraProps({something: 'else'});
 
-    jasmine.clock().tick(0)
+    tick()
     // expecting that the key 'something' got pruned before adding to history state
     expect(store.state.something).toBeUndefined()
   });
+
+  it("throws an error when an action is called from inside middleware", () => {
+    let impureMiddleware = (prev, next, meta) => {
+      addItem(0);
+      next(prev());
+    }
+
+    let store2 = new Store({}, [impureMiddleware])
+    store2.on(addItem, handleAddItem)
+
+    addItem(1);
+    expect(tick).toThrow()
+  })
 
   describe("handling exceptions with middleware", () => {
     beforeEach(() => {
@@ -156,28 +175,26 @@ describe("middleware", () => {
     });
 
     it("can catch errors thrown inside actions", () => {
-      let actionThatThrows = new Action('actionThatThrows', (lastState, payload) => {
-        throw new Error('something went awry')
-      });
+      let actionX = new Action('actionX');
+      let reducerThatThrows = lastState => {throw new Error('something went awry')}
 
-      store.listenTo(actionThatThrows)
-      actionThatThrows()
+      store.on(actionX, reducerThatThrows)
+      actionX()
 
-      jasmine.clock().tick(0)
+      tick()
       expect(caughtExceptions.length).toEqual(1)
       expect(store.trigger).not.toHaveBeenCalled()
     });
 
     it("can catch an error raised by a poorly written action which doesn't return an object literal", () => {
       // returns a string instead of a delta oject
-      let poorlyWrittenAction = new Action('poorlyWrittenAction', (lastState, id) => {
-        return "elephant";
-      });
+      let actionY = new Action('actionY');
+      let poorlyWrittenReducer = lastState => "elephant";
 
-      store.listenTo(poorlyWrittenAction)
+      store.on(actionY, poorlyWrittenReducer);
 
-      poorlyWrittenAction();
-      jasmine.clock().tick(0);
+      actionY();
+      tick();
 
       expect(caughtExceptions.length).toEqual(1)
       expect(store.trigger).not.toHaveBeenCalled()
@@ -195,7 +212,7 @@ describe("middleware", () => {
         [mw.exceptionHandler, mw.poorlyWrittenMiddleware]
       )
 
-      otherStore.listenTo(addItem);
+      otherStore.on(addItem, handleAddItem);
 
       spyOn(otherStore, 'trigger');
       otherStore.trigger.calls.reset();
@@ -203,7 +220,7 @@ describe("middleware", () => {
       expect(caughtExceptions.length).toEqual(0)
       addItem("O1");
 
-      jasmine.clock().tick(0)
+      tick()
       expect(caughtExceptions.length).toEqual(1)
       expect(otherStore.trigger).not.toHaveBeenCalled()
     });

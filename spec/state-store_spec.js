@@ -10,7 +10,7 @@ describe("State Store", () => {
 
   beforeEach(() => {
     jasmine.clock().install()
-    tick = (cb, wait) => setTimeout(cb, wait);
+    tick = (n) => jasmine.clock().tick(n || 0);
   });
 
   afterEach(jasmine.clock().uninstall)
@@ -80,7 +80,7 @@ describe("State Store", () => {
     beforeEach(() => {
       store = new Store();
       stateSetter = store.reducers[1];
-      spyOn(stateSetter, '$invoke').and.callThrough();
+      spyOn(stateSetter, 'invoke').and.callThrough();
 
     });
 
@@ -89,42 +89,44 @@ describe("State Store", () => {
 
       store.setState({ rabbit: "MQ" });
 
-      expect(stateSetter.$invoke).not.toHaveBeenCalled();
+      expect(stateSetter.invoke).not.toHaveBeenCalled();
       expect(store.state).toEqual({});
 
-      jasmine.clock().tick(0)
+      tick()
 
-      expect(stateSetter.$invoke).toHaveBeenCalled();
+      expect(stateSetter.invoke).toHaveBeenCalled();
       expect(store.state).toEqual({ rabbit: "MQ" });
     });
 
     describe("when called with a non-object delta", () => {
+      let invalidDeltaError = () => new Store.errors.INVALID_DELTA();
+
       it("setState throws an error", () => {
         let setter;
 
         setter = () => {
           store.setState("egg basket");
-          jasmine.clock().tick(0)
+          tick()
         };
-        expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
+        expect(setter).toThrow( invalidDeltaError() );
 
         setter = () => {
           store.setState(1);
-          jasmine.clock().tick(0)
+          tick()
         };
-        expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
+        expect(setter).toThrow( invalidDeltaError() );
 
         setter = () => {
           store.setState(true);
-          jasmine.clock().tick(0)
+          tick()
         };
-        expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
+        expect(setter).toThrow( invalidDeltaError() );
 
         setter = () => {
           store.setState(() => true)
-          jasmine.clock().tick(0)
+          tick()
         }
-        expect(setter).toThrow( new Store.errors.INVALID_DELTA() );
+        expect(setter).toThrow( invalidDeltaError() );
       });
     });
 
@@ -141,33 +143,33 @@ describe("State Store", () => {
 
       it("consolidates state updates until the callstack clears", () => {
         expect(store.state).toEqual({});
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state).toEqual({ rabbit: "Roger" });
       });
 
       it("only calls trigger once per tick", () => {
         expect(store.trigger).not.toHaveBeenCalled();
-        jasmine.clock().tick(0);
+        tick();
         expect(store.trigger).toHaveBeenCalledTimes(1);
       });
 
       it("does not call trigger if the state has not changed (test 1)", () => {
         expect(store.trigger).not.toHaveBeenCalled();
-        jasmine.clock().tick(0);
+        tick();
         expect(store.trigger).toHaveBeenCalledTimes(1);
         store.trigger.calls.reset();
         store.setState(store.state);
-        jasmine.clock().tick(0);
+        tick();
         expect(store.trigger).not.toHaveBeenCalled();
       });
 
       it("does not call trigger if the state has not changed (test 2)", () => {
         expect(store.trigger).not.toHaveBeenCalled();
-        jasmine.clock().tick(0);
+        tick();
         expect(store.trigger).toHaveBeenCalledTimes(1);
         store.trigger.calls.reset();
         store.setState({rabbit: "Roger"});
-        jasmine.clock().tick(0);
+        tick();
         expect(store.trigger).not.toHaveBeenCalled();
       });
     });
@@ -191,50 +193,50 @@ describe("State Store", () => {
       });
 
       it("changes the nested state and calls trigger", () => {
-        let rabbit1_b = _.clone(rabbit1);
-        rabbit1_b.home.state = "Connecticut";
+        let updatedRabbit1 = _.clone(rabbit1);
+        updatedRabbit1.home.state = "Connecticut";
         store.setState({
-          rabbits: [ rabbit1_b, rabbit2 ]
+          rabbits: [ updatedRabbit1, rabbit2 ]
         });
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state.rabbits[0].home.state).toBe("Connecticut");
         expect(store.state.rabbits[1]).toBeDefined();
       });
 
       it("merges multiple changes to the same object", () => {
-        let rabbit1_b = _.merge({}, rabbit1);
-        let rabbit1_c = _.merge({}, rabbit1);
+        let rabbit1_1 = _.merge({}, rabbit1);
+        let rabbit1_2 = _.merge({}, rabbit1);
 
-        rabbit1_b.home.state = "Connecticut";
-        expect(rabbit1_b).not.toEqual(rabbit1);
-
-        store.setState({
-          rabbits: [ rabbit1_b, rabbit2 ]
-        });
-
-        rabbit1_c.home.city = "Hartford";
-        expect(rabbit1_c).not.toEqual(rabbit1_b);
+        rabbit1_1.home.state = "Connecticut";
+        expect(rabbit1_1).not.toEqual(rabbit1);
 
         store.setState({
-          rabbits: [rabbit1_c, rabbit2]
+          rabbits: [ rabbit1_1, rabbit2 ]
         });
 
-        let lastStateRabbit1 = store.state.rabbits[0];
-        expect(lastStateRabbit1.home.state).toBeUndefined();
-        expect(lastStateRabbit1.home.city).toBe("McGregor's garden");
+        rabbit1_2.home.city = "Hartford";
+        expect(rabbit1_2).not.toEqual(rabbit1_1);
 
-        jasmine.clock().tick(0);
+        store.setState({
+          rabbits: [rabbit1_2, rabbit2]
+        });
 
-        let newStateRabbit1 = store.state.rabbits[0];
-        expect(newStateRabbit1.home.state).toBe("Connecticut");
-        expect(newStateRabbit1.home.city).toBe("Hartford");
+        let lastState_rabbit1 = store.state.rabbits[0];
+        expect(lastState_rabbit1.home.state).toBeUndefined();
+        expect(lastState_rabbit1.home.city).toBe("McGregor's garden");
+
+        tick();
+
+        let newState_rabbit1 = store.state.rabbits[0];
+        expect(newState_rabbit1.home.state).toBe("Connecticut");
+        expect(newState_rabbit1.home.city).toBe("Hartford");
       });
 
       it("unsets a value with the '$unset' keyword", () => {
         expect(store.state.rabbits).toEqual([rabbit1, rabbit2]);
         store.setState({rabbits: "$unset"});
 
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state.rabbits).toBeUndefined();
       });
 
@@ -242,11 +244,11 @@ describe("State Store", () => {
         expect(store.state.rabbits).toEqual([rabbit1, rabbit2]);
         expect(store.state.rabbits[0].home).toEqual({city: "McGregor's garden"})
 
-        let rabbit1_b = _.merge({}, rabbit1);
-        rabbit1_b.home = "$unset";
-        store.setState({rabbits: [rabbit1_b, rabbit2]});
+        let rabbit1_1 = _.merge({}, rabbit1);
+        rabbit1_1.home = "$unset";
+        store.setState({rabbits: [rabbit1_1, rabbit2]});
 
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state.rabbits[0].home).toBeUndefined();
       });
     });
@@ -262,43 +264,44 @@ describe("State Store", () => {
     it("replaces the state with a new state object", () => {
       store.replaceState({bunny: "Bugs"});
 
-      jasmine.clock().tick(0);
+      tick();
       expect(store.state).toEqual({bunny: "Bugs"});
     });
   });
 
   describe("reset()", () => {
-    let addThing;
+    let addThing, onAddThing;
 
     beforeEach(() => {
       store = new Store({rabbit: "MQ"});
 
-      addThing = new Action((lastState, thing) => {
+      addThing = new Action('addThing')
+      onAddThing = (lastState, thing) => {
         let things = lastState.things || [];
         things.push(thing);
         return {things};
-      });
+      };
 
-      store.listenTo(addThing, Action.strategies.COMPOUND);
+      store.on(addThing, onAddThing, Action.strategies.COMPOUND);
     });
 
     describe("soft reset", () => {
       it("resets the state to initial state and adds it to history stack", () => {
-        expect(store.previousStates).toEqual(1);
+        expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
         store.setState({bunnies: ["Easter", "Bugs"]});
 
-        jasmine.clock().tick(0);
+        tick();
 
-        expect(store.previousStates).toEqual(3);
+        expect(store.depth).toEqual(3);
         expect(store.state.rabbit).toEqual('Roger');
         expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
         store.reset();
 
-        jasmine.clock().tick(0);
+        tick();
 
-        expect(store.previousStates).toEqual(4);
+        expect(store.depth).toEqual(4);
         expect(store.state.rabbit).toEqual("MQ");
         expect(store.state.bunnies).toBeUndefined();
       });
@@ -308,12 +311,12 @@ describe("State Store", () => {
         addThing("B");
         addThing("C");
 
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state).toEqual({rabbit: "MQ", things: ["A","B","C"]});
 
         store.reset();
 
-        jasmine.clock().tick(0);
+        tick();
         expect(store.state).toEqual({rabbit: "MQ"});
 
         undoAddThingA();
@@ -323,19 +326,19 @@ describe("State Store", () => {
 
     describe("hard reset", () => {
       it("resets the state to initial state and resets the history stack", () => {
-        expect(store.previousStates).toEqual(1);
+        expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
         store.setState({bunnies: ["Easter", "Bugs"]});
 
-        jasmine.clock().tick(0);
-        expect(store.previousStates).toEqual(3);
+        tick();
+        expect(store.depth).toEqual(3);
         expect(store.state.rabbit).toEqual('Roger');
         expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
         store.reset(true);
 
-        jasmine.clock().tick(0);
-        expect(store.previousStates).toEqual(1);
+        tick();
+        expect(store.depth).toEqual(1);
         expect(store.state.rabbit).toEqual("MQ");
         expect(store.state.bunnies).toBeUndefined();
       });
@@ -347,27 +350,27 @@ describe("State Store", () => {
         let undoAddThingB = addThing("B"); // resolves to state 3
         addThing("C"); // resolves to state 4
 
-        expect(store.previousStates).toEqual(1);
-        jasmine.clock().tick(0);
-        expect(store.previousStates).toEqual(4);
+        expect(store.depth).toEqual(1);
+        tick();
+        expect(store.depth).toEqual(4);
         expect(store.state).toEqual({rabbit: "MQ", things: ["A", "B", "C"]});
 
         let redoAddThingA = undoAddThingA();
-        jasmine.clock().tick(0);
+        tick();
         // calling undo on addThingA recalculates the state without the delta at version 2
         expect(store.state).toEqual({rabbit: "MQ", things: ["B", "C"]});
 
         // hard reset the history, erasing state 2
         store.reset(true);
 
-        jasmine.clock().tick(0);
-        expect(store.previousStates).toEqual(1);
+        tick();
+        expect(store.depth).toEqual(1);
         expect(store.state).toEqual({rabbit: "MQ"});
 
         store.setState({bunny: "Bugs"}); // resolves to new state 2
 
-        jasmine.clock().tick(0);
-        expect(store.previousStates).toEqual(2);
+        tick();
+        expect(store.depth).toEqual(2);
         expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
 
         store.trigger.calls.reset();
@@ -416,7 +419,7 @@ describe("State Store", () => {
       expect(store.getInitialState()).toEqual({rabbit: "MQ"});
 
       store.setState({rabbit: "Roger"});
-      jasmine.clock().tick(0)
+      tick()
 
       expect(store.state.rabbit).toBe("Roger");
       expect(store.getInitialState()).toEqual({rabbit: "MQ"});
@@ -435,6 +438,28 @@ describe("State Store", () => {
 
 
   describe("trigger()", () => {
+    let subscriber;
 
+    beforeEach(() =>{
+      store = new Store({rabbit: "MQ"});
+
+      let _subscriber = (state, lastState) => {}
+      subscriber = jasmine.createSpy('subscriber')//.and.callFake(_subscriber);
+      store.addListener(subscriber);
+    });
+
+    it("triggers state subscribers with the current state and last state", () => {
+
+      store.setState({rabbit: "Roger"});
+      tick()
+
+      expect(subscriber).toHaveBeenCalledTimes(1)
+      let lastCall = subscriber.calls.mostRecent()
+      expect(lastCall.args).toEqual([
+        {rabbit: "Roger"}, // current state
+        {rabbit: "MQ"} // last state
+      ]);
+
+    })
   });
 });
