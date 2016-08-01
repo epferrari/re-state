@@ -287,13 +287,13 @@ describe("State Store", () => {
 
     describe("soft reset", () => {
       it("resets the state to initial state and adds it to history stack", () => {
-        expect(store.age).toEqual(1);
+        expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
         store.setState({bunnies: ["Easter", "Bugs"]});
 
         tick();
 
-        expect(store.age).toEqual(3);
+        expect(store.depth).toEqual(3);
         expect(store.state.rabbit).toEqual('Roger');
         expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
@@ -301,7 +301,7 @@ describe("State Store", () => {
 
         tick();
 
-        expect(store.age).toEqual(4);
+        expect(store.depth).toEqual(4);
         expect(store.state.rabbit).toEqual("MQ");
         expect(store.state.bunnies).toBeUndefined();
       });
@@ -326,19 +326,19 @@ describe("State Store", () => {
 
     describe("hard reset", () => {
       it("resets the state to initial state and resets the history stack", () => {
-        expect(store.age).toEqual(1);
+        expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
         store.setState({bunnies: ["Easter", "Bugs"]});
 
         tick();
-        expect(store.age).toEqual(3);
+        expect(store.depth).toEqual(3);
         expect(store.state.rabbit).toEqual('Roger');
         expect(store.state.bunnies).toEqual(["Easter", "Bugs"]);
 
         store.reset(true);
 
         tick();
-        expect(store.age).toEqual(1);
+        expect(store.depth).toEqual(1);
         expect(store.state.rabbit).toEqual("MQ");
         expect(store.state.bunnies).toBeUndefined();
       });
@@ -350,9 +350,9 @@ describe("State Store", () => {
         let undoAddThingB = addThing("B"); // resolves to state 3
         addThing("C"); // resolves to state 4
 
-        expect(store.age).toEqual(1);
+        expect(store.depth).toEqual(1);
         tick();
-        expect(store.age).toEqual(4);
+        expect(store.depth).toEqual(4);
         expect(store.state).toEqual({rabbit: "MQ", things: ["A", "B", "C"]});
 
         let redoAddThingA = undoAddThingA();
@@ -364,13 +364,13 @@ describe("State Store", () => {
         store.reset(true);
 
         tick();
-        expect(store.age).toEqual(1);
+        expect(store.depth).toEqual(1);
         expect(store.state).toEqual({rabbit: "MQ"});
 
         store.setState({bunny: "Bugs"}); // resolves to new state 2
 
         tick();
-        expect(store.age).toEqual(2);
+        expect(store.depth).toEqual(2);
         expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
 
         store.trigger.calls.reset();
