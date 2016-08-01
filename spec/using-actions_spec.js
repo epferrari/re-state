@@ -127,18 +127,18 @@ fdescribe("transforming state through actions", () => {
       });
 
       it("does not add or remove states from the history", () => {
-        expect(store.previousStates).toBe(1)
+        expect(store.depth).toBe(1)
 
         let undoAdd = addItem(0)
         tick()
 
         expect(store.trigger).toHaveBeenCalledTimes(1)
-        expect(store.previousStates).toBe(2)
+        expect(store.depth).toBe(2)
 
         let redoAdd = undoAdd()
         tick()
         expect(store.trigger).toHaveBeenCalledTimes(2)
-        expect(store.previousStates).toBe(2)
+        expect(store.depth).toBe(2)
       });
 
       it("executes asyncronously", () => {
@@ -153,7 +153,29 @@ fdescribe("transforming state through actions", () => {
         tick()
         expect(store.trigger).toHaveBeenCalledTimes(1)
         expect(store.state.cart).toEqual([])
-      })
+      });
+
+      describe("when the action is undone before next tick", () => {
+        it("still pushes a state to history", () => {
+          expect(store.depth).toBe(1)
+          let undoAdd = addItem(0)
+          undoAdd()
+          tick()
+          expect(store.depth).toBe(2)
+        });
+
+        it("can be redone and correctly apply state", () => {
+          let undoAdd = addItem(1)
+          let redoAdd = undoAdd()
+
+          tick()
+          expect(store.state.cart).toEqual([])
+
+          redoAdd()
+          tick()
+          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+        });
+      });
     });
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
@@ -391,7 +413,7 @@ fdescribe("transforming state through actions", () => {
       expect(checkout.didInvoke).toHaveBeenCalled()
     });
 
-    it("transforms state by invoking the reducers in the order they were listened to", () => {
+    it("transforms state by invoking the reducers in the order their actions were listened to", () => {
       checkout()
       removeItem(1);
       addItem(1);
