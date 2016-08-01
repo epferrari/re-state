@@ -73,7 +73,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         }, {});
       };
 
+      trigger = () => this.trigger();
 
+      // get accessors
       getter(this, 'reducers', () => $$reducers.toJS() );
       getter(this, 'depth', () => $$history.length);
       getter(this, 'history', () => $$history);
@@ -82,15 +84,11 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       getter(this, '_emitter', () => emitter );
 
 
-
-
-      trigger = () => this.trigger();
-
-
-
-
-
-      // respect "$unset" value passed to remove a value from state
+      /**
+      * @desc merger for Immutable states - respects "$unset" value passed
+      * to remove a value from state
+      * @private
+      */
       function merger(prev, next, key){
         if(next == "$unset")
           return undefined;
@@ -100,8 +98,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           return next;
       };
 
+
       /**
-      *
       * @desc queue a reduce cycle on next tick
       * @private
       */
@@ -118,12 +116,11 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           }
         }
 
-        // defer a state reduction on the next tick if one isn't already queued
         if(phase !== QUEUED){
           phase = QUEUED;
 
           // reduce over any queued actions and undo/redo revisions and
-          // determine whether to push a state change
+          // determine whether to push out a state change
           setTimeout(() => {
             phase = REDUCING;
             let shouldTrigger = executeReduceCycle(currentState());
@@ -143,7 +140,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 			/**
       * @name executeReduceCycle
-      *
       * @desc resolve a series of new states from pending $$reducers
       * @private
       */
@@ -176,9 +172,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
       /**
       * @name resolveReducer
-      *
       * @desc resolve an action's invocation against the last state according
       *   to the strategy defined for the action
+      * @private
       * @returns the updated state
       */
 			function resolveReducer(lastState, reducer){
@@ -186,30 +182,30 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           case (Action.strategies.COMPOUND.toLowerCase()):
             // reduce down all the requested invocations
             return reduce(reducer.requests, (state, request) => {
-              return resolveDelta(state, reducer, request);
+              return resolveRequest(state, reducer, request);
             }, lastState);
           case (Action.strategies.HEAD.toLowerCase()):
             // transform using the first requested invocation queued
-            return resolveDelta(lastState, reducer, reducer.requests[0]);
+            return resolveRequest(lastState, reducer, reducer.requests[0]);
           case (Action.strategies.TAIL.toLowerCase()):
             // resolve using the last request invocation queued
-            return resolveDelta(lastState, reducer, reducer.requests.pop());
+            return resolveRequest(lastState, reducer, reducer.requests.pop());
           default:
             // use tailing strategy
-            return resolveDelta(lastState, reducer, reducer.requests.pop());
+            return resolveRequest(lastState, reducer, reducer.requests.pop());
         }
       }
 
       /**
-      * @name resolveDelta
-      *
-      * @desc resolve a delta (difference) between the result of a single action
-      * invoked with `payload` and the last transient state. Applies middleware and
-      *   makes an entry in the history stack
+      * @name resolveRequest
+      * @desc resolve a single requested invocation of the reducer handling an
+      *   action with with action call's `payload` and the last transient state.
+      *   Applies middleware and pushes an entry to the history stack
+      * @private
       * @returns next state after middleware has been applied and state has been
       *   set in history
       */
-			function resolveDelta(lastState, reducer, request){
+			function resolveRequest(lastState, reducer, request){
         let guid = generateGuid();
         //let undoInvoke = undo.bind(null, $$index + 1, guid);
         let auditRecord = {
@@ -235,8 +231,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
       /**
       * @name applyMiddleware
-      *
       * @desc iterate over all middleware when setting a new state
+      * @private
       * @returns a function to be called with an action's payload, which in turn
       * returns the next state, aka the result of `pushState`
       */
@@ -264,10 +260,10 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       }
 
       /**
-      *
       * @name pushState
       * @desc function with middleware signature called as the last middleware
       * in the stack to create a new state in history
+      * @private
       * @returns a new state object
       */
       function pushState(getNextState, noop, meta){
@@ -309,16 +305,6 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
           //let originalGuid = $$history[atIndex].guid;
           let lastHistory = $$history[atIndex - 1];
-
-          /*
-          let redo = () => {
-            // ensure that a new history tree wasn't created at an index before atIndex
-            if($$history[atIndex].guid === originalGuid){
-              $$history[atIndex] = $$history[atIndex].original;
-              queueHistoryRevision(atIndex + 1);
-            }
-          };
-          */
 
           if(!$$history[atIndex].reverted){
             // duplicate the history state of originalHistory as if action was never called
