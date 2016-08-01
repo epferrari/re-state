@@ -154,6 +154,19 @@ describe("middleware", () => {
     expect(store.state.something).toBeUndefined()
   });
 
+  it("throws an error when an action is called from inside middleware", () => {
+    let impureMiddleware = (prev, next, meta) => {
+      addItem(0);
+      next(prev());
+    }
+
+    let store2 = new Store({}, [impureMiddleware])
+    store2.on(addItem, handleAddItem)
+
+    addItem(1);
+    expect(tick).toThrow()
+  })
+
   describe("handling exceptions with middleware", () => {
     beforeEach(() => {
       spyOn(store, 'trigger');
