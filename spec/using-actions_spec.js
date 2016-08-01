@@ -2,18 +2,13 @@ import Promise from 'bluebird';
 import {Store, Action} from '../src';
 import _ from 'lodash';
 
-fdescribe("transforming state through actions", () => {
+describe("transforming state through actions", () => {
   let store,
-    addItem,
-    onAddItem,
-    removeItem,
-    onRemoveItem,
-    clearCart,
-    onClearCart,
-    updatePrice,
-    onUpdatePrice,
-    checkout,
-    onCheckout,
+    addItem, onAddItem,
+    removeItem, onRemoveItem,
+    clearCart, onClearCart,
+    updatePrice, onUpdatePrice,
+    checkout, onCheckout,
     tick;
 
   // set up some basic actions
@@ -425,4 +420,30 @@ fdescribe("transforming state through actions", () => {
       expect(store.state.total).toEqual(1.0);
     });
   });
+
+  describe("calling actions inside other actions' reducer", () => {
+    it("throws an error", () => {
+      let outerAction = new Action("someAction");
+      let innerAction = new Action("innerAction");
+
+      let handleOuterAction = (lastState, payload) => {
+        innerAction(payload);
+        return lastState;
+      };
+
+      let handleInnerAction = l => l;
+
+      store.on([
+        {action: outerAction, reducer: handleOuterAction},
+        {action: innerAction, reducer: handleInnerAction}
+      ]);
+
+      let shouldThrow = () => {
+        outerAction('uh-oh');
+        tick();
+      }
+      expect(shouldThrow).toThrow()
+
+    })
+  })
 });

@@ -393,7 +393,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             if(actionType === ACTION){
               // kick off a reduce cycle when the reducer action is called anywhere in the app
               action.onTrigger(
-                (request) => queueReduceCycle(index, request.token, request.payload)
+                request => queueReduceCycle(index, request.token, request.payload)
               );
 
               action.onUndo(
