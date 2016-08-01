@@ -2,12 +2,17 @@
 
 const Action = require('./Action');
 const {getter, defineProperty} = require('./utils');
-const {ACTION, ASYNC_ACTION, CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED} = require('./constants');
+const {
+  ACTION, ASYNC_ACTION,
+  CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED,
+  DORMANT, QUEUED, REDUCING } = require('./constants');
 const EventEmitter = require('./EventEmitter');
-const InvalidDeltaError = require('./InvalidDeltaError');
-const InvalidReturnError = require('./InvalidReturnError');
-const InvalidReducerError = require('./InvalidReducerError');
-const InvalidIndexError = require('./InvalidIndexError');
+
+const InvalidDeltaError = require('./errors/InvalidDeltaError');
+const InvalidReturnError = require('./errors/InvalidReturnError');
+const InvalidReducerError = require('./errors/InvalidReducerError');
+const InvalidIndexError = require('./errors/InvalidIndexError');
+const CircularInvocationError = require('./errors/CircularInvocationError');
 
 
 module.exports = function StoreFactory(Immutable, _, generateGuid){
@@ -30,7 +35,9 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           emitter,
           trigger,
           currentState,
+          phase = DORMANT,
           reducePending = false,
+          reduceExecuting = false,
           pendingRevisions = [];
 
 
@@ -68,7 +75,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
 
       getter(this, 'reducers', () => $$reducers.toJS() );
-      getter(this, 'age', () => $$history.length);
+      getter(this, 'depth', () => $$history.length);
       getter(this, 'history', () => $$history);
       getter(this, 'index', () => $$index);
       getter(this, 'state', () => currentState());
@@ -100,21 +107,25 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       */
       function queueReduceCycle(index, token, payload){
         if(arguments.length){
-          // update reducer hash in $$reducers with action's payload
-          $$reducers = $$reducers.update(index, reducer => {
-            reducer.requests.push({payload: payload, token: token});
-            return reducer;
-          });
+          if(phase === REDUCING){
+            throw new CircularInvocationError();
+          } else {
+            // update reducer hash in $$reducers with action's payload
+            $$reducers = $$reducers.update(index, reducer => {
+              reducer.requests.push({payload: payload, token: token});
+              return reducer;
+            });
+          }
         }
 
         // defer a state reduction on the next tick if one isn't already queued
-        if(!reducePending || pendingRevisions.length){
-          reducePending = true;
-          setTimeout(() => {
-            // TODO: ensure no actions are collected during a reduce cycle, aka actions within actions
+        if(phase !== QUEUED){
+          phase = QUEUED;
 
-            // reduce over any queued actions and undo/redo revisions and
-            // determine whether to push a state change
+          // reduce over any queued actions and undo/redo revisions and
+          // determine whether to push a state change
+          setTimeout(() => {
+            phase = REDUCING;
             let shouldTrigger = executeReduceCycle(currentState());
 
             if(pendingRevisions.length){
@@ -123,8 +134,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
               pendingRevisions = [];
             }
 
+            phase = DORMANT;
             if(shouldTrigger) trigger();
-
           }, 0);
         }
       };
