@@ -438,6 +438,28 @@ describe("State Store", () => {
 
 
   describe("trigger()", () => {
+    let subscriber;
 
+    beforeEach(() =>{
+      store = new Store({rabbit: "MQ"});
+
+      let _subscriber = (state, lastState) => {}
+      subscriber = jasmine.createSpy('subscriber')//.and.callFake(_subscriber);
+      store.addListener(subscriber);
+    });
+
+    it("triggers state subscribers with the current state and last state", () => {
+
+      store.setState({rabbit: "Roger"});
+      tick()
+
+      expect(subscriber).toHaveBeenCalledTimes(1)
+      let lastCall = subscriber.calls.mostRecent()
+      expect(lastCall.args).toEqual([
+        {rabbit: "Roger"}, // current state
+        {rabbit: "MQ"} // last state
+      ]);
+
+    })
   });
 });

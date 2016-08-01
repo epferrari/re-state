@@ -4,7 +4,7 @@ const Action = require('./Action');
 const {getter, defineProperty} = require('./utils');
 const {
   ACTION, ASYNC_ACTION,
-  CHANGE_EVENT, SET_EVENT, REDUCE_EVENT, ACTION_ADDED,
+  STATE_CHANGE, REDUCE_INVOKED, ACTION_ADDED,
   DORMANT, QUEUED, REDUCING } = require('./constants');
 const EventEmitter = require('./EventEmitter');
 
@@ -144,7 +144,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @private
       */
       function executeReduceCycle(previousState){
-        emitter.emit(REDUCE_EVENT);
+        emitter.emit(REDUCE_INVOKED);
         let initialIndex = $$index;
         let reducersToCall = chain($$reducers.toJS())
           .filter(reducer => reducer.requests.length)
@@ -489,7 +489,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     *   value to the reserved keyword `"$unset"` to have the property removed from state.
     * @method
     * @instance
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     * @memberof StateStore
     */
       this.setState = function setState(deltaMap){
@@ -521,7 +521,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @param {object} newState - a plain object of properties to be merged into state
     * @method
     * @instance
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     * @memberof StateStore
     */
       this.replaceState = function replaceState(newState){
@@ -542,19 +542,18 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @method
     * @instance
     * @memberof StateStore
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     */
       this.reset = function reset(hard){
         if(hard === true){
           // hard reset, clears the entire $$history stack, no previous histories are saved
           $$history = [$$history[0]];
           $$index = 0;
+          trigger();
         } else {
           // soft reset, push the initial state to the end of the $$history stack
           action_replaceState(this.getInitialState());
         }
-
-        trigger();
       }.bind(this);
 
     /**
@@ -565,7 +564,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @method
     * @instance
     * @memberof StateStore
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     */
       this.resetToState = function resetToState(index){
         if(!Number.isInteger(index)){
@@ -585,7 +584,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @method
     * @instance
     * @memberof StateStore
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     */
       this.fastForward = function fastForward(n){
         if(n !== undefined && !Number.isInteger(n)){
@@ -606,7 +605,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @method
     * @instance
     * @memberof StateStore
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     */
       this.rewind = function rewind(n){
         if(n !== undefined && !Number.isInteger(n)){
@@ -627,7 +626,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @method
     * @instance
     * @memberof StateStore
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     */
       this.goto = function goto(index){
         if(!Number.isInteger(index)){
@@ -679,7 +678,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     */
     getStateAtIndex(index){
       if(this.history[index])
-        return this.history[index].toJS();
+        return this.history[index].$state.toJS();
     }
 
     /**
@@ -694,7 +693,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @memberof StateStore
     */
     addListener(listener, thisBinding){
-      return this._emitter.on(CHANGE_EVENT, listener, thisBinding);
+      return this._emitter.on(STATE_CHANGE, listener, thisBinding);
     }
 
     onchange(listener, thisBinding){
@@ -703,14 +702,18 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
     /**
     * @name trigger
-    * @desc trigger all listeners with the current state
+    * @desc trigger all listeners with the current state and last state
     * @method
     * @instance
-    * @fires CHANGE_EVENT
+    * @fires STATE_CHANGE
     * @memberof StateStore
     */
     trigger(){
-      this._emitter.emit(CHANGE_EVENT, this.state);
+      this._emitter.emit(
+        STATE_CHANGE,
+        this.state,
+        this.getStateAtIndex(this.index - 1)
+      );
     }
 
     static get errors(){
