@@ -130,13 +130,15 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           // determine whether to push out a state change
           setTimeout(() => {
             phase = REDUCING;
-            let shouldTrigger = executeReduceCycle(currentState());
+            let shouldTrigger;
 
             if(pendingRevisions.length){
               shouldTrigger = true;
               pendingRevisions.forEach(reviseHistory);
               pendingRevisions = [];
             }
+
+            shouldTrigger = executeReduceCycle(currentState()) || shouldTrigger;
 
             phase = READY;
             if(shouldTrigger) trigger();

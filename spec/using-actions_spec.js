@@ -443,7 +443,69 @@ describe("transforming state through actions", () => {
         tick();
       }
       expect(shouldThrow).toThrow()
+    })
+  })
 
+  describe("listening to the same action on multiple stores", () => {
+    let addToCart, cart, rewardsPurchases;
+    beforeEach(() => {
+      addToCart = new Action("addToCart")
+      cart = new Store({items:[]})
+      rewardsPurchases = new Store({items:[]})
+
+      cart.when(addToCart, (lastState, payload) => {
+        lastState.items.push(payload)
+        return lastState
+      })
+
+      rewardsPurchases.when(addToCart, (lastState, payload) => {
+        if(payload.qualifiesForRewards)
+          lastState.items.push(payload)
+        return lastState
+      })
+    })
+
+    it("updates the state of both stores according to the reducer they registered with the action", () => {
+      addToCart({
+        id: 3,
+        name: "Candy Bar"
+      })
+
+      tick()
+      expect(cart.state.items.length).toBe(1)
+      expect(rewardsPurchases.state.items.length).toBe(0)
+
+      addToCart({
+        id: 6,
+        name: "Rolex",
+        qualifiesForRewards: true
+      })
+
+      tick()
+      expect(cart.state.items.length).toBe(2)
+      expect(rewardsPurchases.state.items.length).toBe(1)
+    })
+
+    it("undoes/redoes state changes in both stores", () => {
+      let undo = addToCart({
+        id: 6,
+        name: "Rolex",
+        qualifiesForRewards: true
+      })
+
+      tick()
+      expect(cart.state.items.length).toBe(1)
+      expect(rewardsPurchases.state.items.length).toBe(1)
+
+      let redo = undo()
+      tick()
+      expect(cart.state.items.length).toBe(0)
+      expect(rewardsPurchases.state.items.length).toBe(0)
+
+      redo()
+      tick()
+      expect(cart.state.items.length).toBe(1)
+      expect(rewardsPurchases.state.items.length).toBe(1)
     })
   })
 });
