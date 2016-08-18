@@ -1,24 +1,30 @@
 "use-strict";
 
-const Action = require('./Action');
-const {getter, defineProperty} = require('./utils');
-const {
-  ACTION, ASYNC_ACTION,
-  STATE_CHANGE, REDUCE_INVOKED, ACTION_ADDED,
-  DORMANT, QUEUED, REDUCING } = require('./constants');
-const EventEmitter = require('./EventEmitter');
-
+const Action = require('./action');
+const EventEmitter = require('./event-emitter');
 const InvalidActionError = require("./errors/InvalidActionError");
 const InvalidDeltaError = require('./errors/InvalidDeltaError');
 const InvalidReturnError = require('./errors/InvalidReturnError');
 const InvalidReducerError = require('./errors/InvalidReducerError');
 const InvalidIndexError = require('./errors/InvalidIndexError');
 const CircularInvocationError = require('./errors/CircularInvocationError');
+const {getter, defineProperty} = require('./utils');
+const {
+  ACTION, ASYNC_ACTION,
+  STATE_CHANGE, REDUCE_INVOKED, ACTION_ADDED,
+  READY, QUEUED, REDUCING } = require('./constants');
 
+module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
-module.exports = function StoreFactory(Immutable, _, generateGuid){
-
-  let {isPlainObject, isFunction, isArray, merge, reduce, chain, contains, findIndex} = _;
+  let {
+    isPlainObject,
+    isFunction,
+    isArray,
+    merge,
+    reduce,
+    chain,
+    contains,
+    findIndex} = lodash;
 
   return class StateStore {
     /**
@@ -36,7 +42,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           emitter,
           trigger,
           currentState,
-          phase = DORMANT,
+          phase = READY,
           reducePending = false,
           reduceExecuting = false,
           pendingRevisions = [];
@@ -61,7 +67,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       }];
 
 
-      $$middleware = _.isArray(middleware) ? middleware : [];
+      $$middleware = isArray(middleware) ? middleware : [];
 
       emitter = new EventEmitter();
 
@@ -132,7 +138,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
               pendingRevisions = [];
             }
 
-            phase = DORMANT;
+            phase = READY;
             if(shouldTrigger) trigger();
           }, 0);
         }

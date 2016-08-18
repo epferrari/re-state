@@ -1,11 +1,10 @@
 "use strict";
 
-const keyMirror = (arr) => {
-  return arr.reduce((acc, val) => {
+const keyMirror = (arr) => arr
+  .reduce((acc, val) => {
     acc[val] = val;
     return acc;
   }, {});
-};
 
 module.exports = keyMirror([
   // action types
@@ -13,7 +12,7 @@ module.exports = keyMirror([
   "ASYNC_ACTION",
 
   // store phases
-  "DORMANT",
+  "READY",
   "QUEUED",
   "REDUCING",
 

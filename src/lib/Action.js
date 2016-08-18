@@ -2,7 +2,7 @@
 
 const {getter, defineProperty} = require('./utils');
 const {ACTION, ACTION_TRIGGERED, UNDO_ACTION, REDO_ACTION} = require('./constants');
-const EventEmitter = require('./EventEmitter');
+const EventEmitter = require('./event-emitter');
 
 module.exports = class Action {
 	constructor(name){

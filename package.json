@@ -4,7 +4,7 @@
   "description": "Predictable state container for javascript apps, a combination of flux patterns inspired by Redux and Reflux",
   "main": "lib/index.commonjs.js",
   "scripts": {
-    "test": "babel-node ./spec/run-jasmine.js",
+    "test": "babel-node ./spec",
     "docs:api:store": "jsdoc2md ./src/store-factory.js > docs/store.md",
     "build": "babel ./src --out-dir ./lib"
   },
