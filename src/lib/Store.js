@@ -454,7 +454,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @instance
     * @memberof StateStore
     */
-      this.on = function on(action, reducer, strategy){
+      this.when = function when(action, reducer, strategy){
         if( isFunction(action) ){
           return listenToAction(action, reducer, strategy);
         } else if(isArray(action)){
@@ -469,13 +469,13 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       };
 
     // set the store's first reducer as a noop
-    this.on(new Action('noop'), lastState => lastState);
+    this.when(new Action('noop'), lastState => lastState);
 
     // set a second reducer to handle direct setState operations
     let action_setState = new Action("setState");
     let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
 
-    this.on(action_setState, reducer_setState, Action.strategies.COMPOUND);
+    this.when(action_setState, reducer_setState, Action.strategies.COMPOUND);
 
 
     /**
@@ -507,7 +507,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         }, newState);
       };
 
-      this.on(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
+      this.when(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
 
 
     /**
@@ -666,8 +666,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     /**
     *
     * @name getState
-    * @desc Get the app's state at a version in the state $$history
-    * @param {int} index
+    * @desc Get the app's state at a version in history
+    * @param {int} [index=current]
     * @method
     * @instance
     * @memberof StateStore

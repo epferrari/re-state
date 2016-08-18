@@ -282,7 +282,7 @@ describe("State Store", () => {
         return {things};
       };
 
-      store.on(addThing, onAddThing, Action.strategies.COMPOUND);
+      store.when(addThing, onAddThing, Action.strategies.COMPOUND);
     });
 
     describe("soft reset", () => {

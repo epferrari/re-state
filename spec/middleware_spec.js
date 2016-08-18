@@ -101,7 +101,7 @@ describe("middleware", () => {
       _.map(mw, fn => fn)
     );
 
-    store.on([
+    store.when([
       {action: addItem, reducer: handleAddItem, strategy: 'compound'},
       {action: addExtraProps, reducer: handleExtraProps}
     ]);
@@ -161,7 +161,7 @@ describe("middleware", () => {
     }
 
     let store2 = new Store({}, [impureMiddleware])
-    store2.on(addItem, handleAddItem)
+    store2.when(addItem, handleAddItem)
 
     addItem(1);
     expect(tick).toThrow()
@@ -178,7 +178,7 @@ describe("middleware", () => {
       let actionX = new Action('actionX');
       let reducerThatThrows = lastState => {throw new Error('something went awry')}
 
-      store.on(actionX, reducerThatThrows)
+      store.when(actionX, reducerThatThrows)
       actionX()
 
       tick()
@@ -191,7 +191,7 @@ describe("middleware", () => {
       let actionY = new Action('actionY');
       let poorlyWrittenReducer = lastState => "elephant";
 
-      store.on(actionY, poorlyWrittenReducer);
+      store.when(actionY, poorlyWrittenReducer);
 
       actionY();
       tick();
@@ -212,7 +212,7 @@ describe("middleware", () => {
         [mw.exceptionHandler, mw.poorlyWrittenMiddleware]
       )
 
-      otherStore.on(addItem, handleAddItem);
+      otherStore.when(addItem, handleAddItem);
 
       spyOn(otherStore, 'trigger');
       otherStore.trigger.calls.reset();

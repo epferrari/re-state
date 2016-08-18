@@ -94,7 +94,7 @@ describe("transforming state through actions", () => {
   describe("with a single Action reducer", () => {
     describe("using Action's returned undo/redo functions", () => {
       beforeEach(() => {
-        store.on(addItem, onAddItem)
+        store.when(addItem, onAddItem)
       });
 
       it("undoes the action's effect on state", () => {
@@ -175,7 +175,7 @@ describe("transforming state through actions", () => {
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
       beforeEach(() => {
-        store.on(addItem, onAddItem, 'TAIL');
+        store.when(addItem, onAddItem, 'TAIL');
       });
 
       it("updates the state from the last call to reducer", () => {
@@ -230,7 +230,7 @@ describe("transforming state through actions", () => {
     });
 
     describe("using the `HEAD` strategy (Action.strategies.HEAD)", () => {
-      beforeEach(() => store.on(addItem, onAddItem, 'HEAD'));
+      beforeEach(() => store.when(addItem, onAddItem, 'HEAD'));
 
       it("updates the state from the first call to reducer action", () => {
         expect(store.state.cart).toEqual([]);
@@ -289,7 +289,7 @@ describe("transforming state through actions", () => {
     });
 
     describe("using the `COMPOUND` strategy (Action.strategies.COMPOUND)", () => {
-      beforeEach(() => store.on(addItem, onAddItem, 'COMPOUND'));
+      beforeEach(() => store.when(addItem, onAddItem, 'COMPOUND'));
 
       it("updates the state with all results of reducer action", () => {
         expect(store.state.cart).toEqual([]);
@@ -390,10 +390,10 @@ describe("transforming state through actions", () => {
       spyOn(clearCart,  'didInvoke').and.callThrough()
       spyOn(checkout,   'didInvoke').and.callThrough()
 
-      store.on(addItem, onAddItem, 'compound')
-      store.on(removeItem, onRemoveItem, 'compound')
-      store.on(clearCart, onClearCart)
-      store.on(checkout, onCheckout)
+      store.when(addItem, onAddItem, 'compound')
+      store.when(removeItem, onRemoveItem, 'compound')
+      store.when(clearCart, onClearCart)
+      store.when(checkout, onCheckout)
     });
 
     it("invokes only the actions triggered in each reduce cycle", () => {
@@ -433,7 +433,7 @@ describe("transforming state through actions", () => {
 
       let handleInnerAction = l => l;
 
-      store.on([
+      store.when([
         {action: outerAction, reducer: handleOuterAction},
         {action: innerAction, reducer: handleInnerAction}
       ]);
