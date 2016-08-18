@@ -8,6 +8,7 @@ const {
   DORMANT, QUEUED, REDUCING } = require('./constants');
 const EventEmitter = require('./EventEmitter');
 
+const InvalidActionError = require("./errors/InvalidActionError");
 const InvalidDeltaError = require('./errors/InvalidDeltaError');
 const InvalidReturnError = require('./errors/InvalidReturnError');
 const InvalidReducerError = require('./errors/InvalidReducerError');
@@ -53,7 +54,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
       // private stack of [reducer index, Immutable Map app state]
       $$history = [{
-        reducer_invoked: 0,
+        reducerInvoked: 0,
         payload: {},
         $state: Immutable.Map().merge(initialState),
         guid: generateGuid()
@@ -238,7 +239,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       */
       function applyMiddleware(reducerInvoke, meta){
         // ensure meta is immutable in each middleware
-        let getMeta = () => meta
+        let getMeta = () => meta;
+        let exports = {};
 
         if($$middleware.length){
           let middleware, getNext;
@@ -249,7 +251,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
             if(!isPlainObject(payload_n))
               throw new InvalidReturnError();
             if(middleware[n])
-              return middleware[n](() => payload_n, getNext(n), getMeta());
+              return middleware[n](() => payload_n, getNext(n), getMeta(), exports);
           };
           // final function of the middleware stack is to apply a state update
           middleware.push(pushState);
@@ -266,26 +268,27 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       * @private
       * @returns a new state object
       */
-      function pushState(getNextState, noop, meta){
-        let nextState, nextImmutableState;
+      function pushState(getDelta, noop, meta){
+        let delta, nextImmutableState;
 
-        nextState = getNextState();
-        if( !isPlainObject(nextState) ) throw new InvalidReturnError();
+        delta = getDelta();
+        if( !isPlainObject(delta) ) throw new InvalidReturnError();
 
         // remove any history past current index
         $$history = $$history.slice(0, $$index + 1);
 
-        nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, nextState);
+        nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, delta);
         // add a new state to the $$history and increment index
         // return state to the next reducer
         if(!Immutable.is($$history[$$index].$state, nextImmutableState)){
           $$history = $$history.slice(0, $$index + 1);
           // add new entry to history
           $$history.push({
-            reducer_invoked: meta.reducer_index,
+            reducerInvoked: meta.reducer_index,
             payload: meta.payload,
             $state: nextImmutableState,
-            guid: meta.guid
+            guid: meta.guid,
+            delta: delta
           });
           // update the pointer to new state in $$history
           $$index++;
@@ -294,7 +297,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           if(meta.canceled)
             undo($$index, meta.guid);
         }
-        return nextState;
+        return nextImmutableState.toJS();
       }
 
 			function undo(atIndex, guid){
@@ -309,7 +312,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
           if(!$$history[atIndex].reverted){
             // duplicate the history state of originalHistory as if action was never called
             $$history[atIndex] = {
-              reducer_invoked: 0,
+              reducerInvoked: 0,
               payload: {},
               $state: lastHistory.$state,
               guid: guid,
@@ -350,7 +353,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
         $$history
         .slice(fromIndex)
         .reduce((last, curr, i) => {
-          let reducerToApply = $$reducers.toJS()[curr.reducer_invoked];
+          let reducerToApply = $$reducers.toJS()[curr.reducerInvoked];
           let revisedState = reducerToApply.invoke(last.$state.toJS(), curr.payload);
           // update $state of the current entry
           curr.$state = last.$state.mergeDeepWith(merger, revisedState);
@@ -372,72 +375,66 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       function listenToAction(action, reducerFn, strategy){
         let actionType = action.$$type;
 
-        if((actionType === ACTION || actionType === ASYNC_ACTION)){
-          let index = $$reducers.size;
+        if(!reducerFn) throw new InvalidReducerError();
 
-          let reducer = {
-            name: action.$$name,
-            invoke: (lastState, payload, auditRecord, token) => {
-              action.didInvoke(token, auditRecord)
-              return reducerFn(lastState, payload);
-            },
-            index: index,
-            strategy: strategy || "TAIL",
-            requests: []
-          };
+        if(actionType !== ACTION) throw new InvalidActionError();
 
-          // only add each Action once
-          if(!contains($$reducers.toJS(), reducer)){
-            $$reducers = $$reducers.push(reducer);
+        let index = $$reducers.size;
 
-            if(actionType === ACTION){
-              // kick off a reduce cycle when the reducer action is called anywhere in the app
-              action.onTrigger(
-                request => queueReduceCycle(index, request.token, request.payload)
-              );
+        let reducer = {
+          name: action.$$name,
+          invoke: (lastState, payload, auditRecord, token) => {
+            action.didInvoke(token, auditRecord)
+            return reducerFn(lastState, payload);
+          },
+          index: index,
+          strategy: strategy || "TAIL",
+          requests: []
+        };
 
-              action.onUndo(
-                (token, auditRecords) => {
-                  // cancel invocation request if pending
-                  updatePendingReducer(index, token, {canceled: true});
+        // only add each Action once
+        if(!contains($$reducers.toJS(), reducer)){
+          $$reducers = $$reducers.push(reducer);
 
-                  // if not pending, then an action alters history and it will have
-                  // sent an audit record to the action to cache by its callCount token.
-                  // Actions may be listened to by multiple state containers, and may
-                  // therefore have multiple audit records attached to each call.
-                  // However, this state container will only execute an undo when the guid
-                  // of the audit record matches the index of the state it changed, so
-                  // we can count on it to be unique against this state container
-                  let auditRecord = auditRecords.find(ar => {
-                    return (ar.$$container_id === $$container_id);
-                  });
-                  auditRecord && undo(auditRecord.$$index, auditRecord.guid);
-                }
-              );
+          // kick off a reduce cycle when the reducer action is called anywhere in the app
+          action.onTrigger(
+            request => queueReduceCycle(index, request.token, request.payload)
+          );
 
-              action.onRedo(
-                (token, auditRecords) => {
-                  // resume normal workflow for undone pending reduce request
-                  updatePendingReducer(index, token, {canceled: false})
-                  // see above for iteration reasoning
-                  let auditRecord = auditRecords.find(ar => {
-                    return (ar.$$container_id === $$container_id);
-                  });
-                  auditRecord && redo(auditRecord.$$index, auditRecord.guid);
-                }
-              )
+          action.onUndo(
+            (token, auditRecords) => {
+              // cancel invocation request if pending
+              updatePendingReducer(index, token, {canceled: true});
 
-
-            }else if(actionType === ASYNC_ACTION){
-              let handler;
+              // if not pending, then an action alters history and it will have
+              // sent an audit record to the action to cache by its callCount token.
+              // Actions may be listened to by multiple state containers, and may
+              // therefore have multiple audit records attached to each call.
+              // However, this state container will only execute an undo when the guid
+              // of the audit record matches the index of the state it changed, so
+              // we can count on it to be unique against this state container
+              let auditRecord = auditRecords.find(ar => {
+                return (ar.$$container_id === $$container_id);
+              });
+              auditRecord && undo(auditRecord.$$index, auditRecord.guid);
             }
+          );
 
-            let registration = {action: action.$$name, index: index}
-            emitter.emit(ACTION_ADDED, registration)
-            return registration;
-          }
-        } else {
-          throw new InvalidReducerError();
+          action.onRedo(
+            (token, auditRecords) => {
+              // resume normal workflow for undone pending reduce request
+              updatePendingReducer(index, token, {canceled: false})
+              // see above for iteration reasoning
+              let auditRecord = auditRecords.find(ar => {
+                return (ar.$$container_id === $$container_id);
+              });
+              auditRecord && redo(auditRecord.$$index, auditRecord.guid);
+            }
+          );
+
+          let registration = {action: action.$$name, index: index}
+          emitter.emit(ACTION_ADDED, registration)
+          return registration;
         }
       }
 
@@ -668,7 +665,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
 
     /**
     *
-    * @name getStateAtIndex
+    * @name getState
     * @desc Get the app's state at a version in the state $$history
     * @param {int} index
     * @method
@@ -676,7 +673,8 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
     * @memberof StateStore
     * @returns {object} state
     */
-    getStateAtIndex(index){
+    getState(index){
+      if(index === undefined) index = this.index;
       if(this.history[index])
         return this.history[index].$state.toJS();
     }
@@ -712,7 +710,7 @@ module.exports = function StoreFactory(Immutable, _, generateGuid){
       this._emitter.emit(
         STATE_CHANGE,
         this.state,
-        this.getStateAtIndex(this.index - 1)
+        this.getState(this.index - 1)
       );
     }
 

@@ -426,10 +426,29 @@ describe("State Store", () => {
     });
   });
 
+  describe("getState", () => {
+    beforeEach(() => {
+      store = new Store({rabbit: "MQ"});
+    })
 
-  describe("getStateAtIndex(index)", () => {
+    it("returns a state at index", () => {
+      store.setState({rabbit: "Bugs"})
+      store.setState({phrase: "What's up doc"})
+      store.setState({foe: "Elmer Fudd"})
+      tick()
 
-  });
+      expect( store.getState() ).toEqual({
+        rabbit: "Bugs",
+        phrase: "What's up doc",
+        foe: "Elmer Fudd"
+      });
+
+      expect( store.getState(2) ).toEqual({
+        rabbit: "Bugs",
+        phrase: "What's up doc"
+      })
+    })
+  })
 
 
   describe("addListener(listener, thisBinding)", () => {
