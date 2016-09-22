@@ -17,6 +17,7 @@ const {
 module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
   let {
+    clone,
     isPlainObject,
     isFunction,
     isArray,
@@ -157,14 +158,14 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         let initialIndex = $$index;
         let reducersToCall = chain($$reducers.toJS())
           .filter(reducer => reducer.requests.length)
-          .sortBy(reducer => reducer.index)
+          .sortBy(reducer => reducer.position)
           .value()
 
         reduce(reducersToCall, (state, reducer) => {
           // run the state through the reducer
           let nextState = resolveReducer(state, reducer);
           // clear action requests for the next cycle and create new immutable list
-          $$reducers = $$reducers.update(reducer.index, r => {
+          $$reducers = $$reducers.update(reducer.position, r => {
             r.requests = [];
             return r;
           });
@@ -216,7 +217,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       */
 			function resolveRequest(lastState, reducer, request){
         let guid = generateGuid();
-        //let undoInvoke = undo.bind(null, $$index + 1, guid);
         let auditRecord = {
           $$container_id: $$container_id,
           $$index: ($$index + 1),
@@ -226,16 +226,15 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         let reducerInvoke = (p0) => reducer.invoke(lastState, p0, auditRecord, token);
 
         let meta = {
-          guid: guid,
-          action: reducer.trigger,
+          action_name: reducer.actionName,
           canceled: canceled,
+          guid: guid,
+          last_state: JSON.stringify(lastState),
           payload: payload,
-          reducer_index: reducer.index,
-          last_state: JSON.stringify(lastState)
+          reducer_position: reducer.position
         };
 
         return applyMiddleware(reducerInvoke, meta)(payload);
-
       }
 
       /**
@@ -245,13 +244,9 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @returns a function to be called with an action's payload, which in turn
       * returns the next state, aka the result of `pushState`
       */
-      function applyMiddleware(reducerInvoke, meta, revision){
-        // ensure meta is immutable in each middleware
-        let getMeta = () => meta;
-        let exports = {};
-
+      function applyMiddleware(reducerInvoke, meta, isRevision){
         if($$middleware.length){
-          let middleware, getNext;
+          let middleware, getNext, exports = {};
 
           middleware = $$middleware.map(m => m)
           getNext = i => payload_n => {
@@ -259,21 +254,24 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             if(!isPlainObject(payload_n))
               throw new InvalidReturnError();
             if(middleware[n])
-              return middleware[n](() => payload_n, getNext(n), getMeta(), exports);
+              return middleware[n](() => payload_n, getNext(n), clone(meta), exports);
           };
 
-          if(revision)
+          if(isRevision)
+            // just pass the transformed state thru as the final fn in middleware
             middleware.push( (prev, next, meta) => next(prev()) )
           else
             // final function of the middleware stack is to apply a state update
             middleware.push(pushState);
 
-          return payload_0 => middleware[0](() => reducerInvoke(payload_0), getNext(0), getMeta());
+          return (payload_0) =>
+            middleware[0](() => reducerInvoke(payload_0), getNext(0), clone(meta));
         } else {
-          if(revision)
-            return reducerInvoke
+          if(isRevision)
+            return reducerInvoke;
           else
-            return payload_0 => pushState(() => reducerInvoke(payload_0), 1, getMeta());
+            return (payload_0) =>
+              pushState(() => reducerInvoke(payload_0), 1, clone(meta));
         }
       }
 
@@ -300,11 +298,10 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           $$history = $$history.slice(0, $$index + 1);
           // add new entry to history
           $$history.push({
-            reducerInvoked: meta.reducer_index,
-            payload: meta.payload,
             $state: nextImmutableState,
             guid: meta.guid,
-            delta: delta
+            payload: meta.payload,
+            reducerInvoked: meta.reducer_position
           });
           // update the pointer to new state in $$history
           $$index++;
@@ -328,12 +325,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           if(!$$history[atIndex].reverted){
             // duplicate the history state of originalHistory as if action was never called
             $$history[atIndex] = {
-              reducerInvoked: 0,
-              payload: {},
               $state: lastHistory.$state,
               guid: guid,
-              reverted: true,
-              original: $$history[atIndex]
+              original: $$history[atIndex],
+              payload: {},
+              reducerInvoked: 0,
+              reverted: true
             }
 
             // revise subsequent history entries according to revised state at index
@@ -373,10 +370,10 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           let reducerInvoke = payload_0 => reducer.invoke(last.$state.toJS(), payload_0);
 
           // mimic resolveRequest for the middleware, pass true for `revision`
-          let revisedState = applyMiddleware(reducerInvoke, null, true)(curr.payload)
+          let revisedDelta = applyMiddleware(reducerInvoke, null, true)(curr.payload)
 
           // mimic pushState for the merge
-          curr.$state = last.$state.mergeDeepWith(merger, revisedState);
+          curr.$state = last.$state.mergeDeepWith(merger, revisedDelta);
           return ($$history[fromIndex + i] = curr);
         }, lastHistory);
       }
@@ -408,7 +405,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         }
 
         store[triggerAction]
-        store.onchange((storeState) => {
+        store.onchange((storeState, lastStoreState, updatedIndicies) => {
+
+          // need to look at <subscriber>'s $$history and re-calculate
+          // everything from the first index that <emitter> started
+          // affecting <subscriber>. First, for each entry in <subscriber's> history,
+          // must replace the payload with <emitter>'s state at affecting index.
 
           queueReduceCycle(index, store.index, storeState)
           let i = store.index;
@@ -427,17 +429,17 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
         if(actionType !== ACTION) throw new InvalidActionError();
 
-        let index = $$reducers.size;
+        let position = $$reducers.size;
 
         let reducer = {
-          trigger: action.$$name,
+          actionName: action.$$name,
           invoke: (lastState, payload, auditRecord, token) => {
             action.didInvoke(token, auditRecord)
             return reducerFn(lastState, payload);
           },
-          index: index,
-          strategy: strategy || "TAIL",
-          requests: []
+          position: position,
+          requests: [],
+          strategy: (strategy || "TAIL")
         };
 
         // only add each Action once
@@ -446,13 +448,13 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
           // kick off a reduce cycle when the reducer action is called anywhere in the app
           action.onTrigger(
-            request => queueReduceCycle(index, request.token, request.payload)
+            request => queueReduceCycle(position, request.token, request.payload)
           );
 
           action.onUndo(
             (token, auditRecords) => {
               // cancel invocation request if pending
-              updatePendingReducer(index, token, {canceled: true});
+              updatePendingReducer(position, token, {canceled: true});
 
               // if not pending, then an action alters history and it will have
               // sent an audit record to the action to cache by its callCount token.
@@ -471,7 +473,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           action.onRedo(
             (token, auditRecords) => {
               // resume normal workflow for undone pending reduce request
-              updatePendingReducer(index, token, {canceled: false})
+              updatePendingReducer(position, token, {canceled: false})
               // see above for iteration reasoning
               let auditRecord = auditRecords.find(ar => {
                 return (ar.$$container_id === $$container_id);
