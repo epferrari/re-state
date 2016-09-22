@@ -11,7 +11,7 @@ const CircularInvocationError = require('./errors/CircularInvocationError');
 const {getter, defineProperty} = require('./utils');
 const {
   ACTION, ASYNC_ACTION,
-  STATE_CHANGE, REDUCE_INVOKED, ACTION_ADDED,
+  STATE_CHANGE, REDUCE_INVOKED,
   READY, QUEUED, REDUCING } = require('./constants');
 
 module.exports = function storeFactory(Immutable, lodash, generateGuid){
@@ -227,7 +227,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
         let meta = {
           guid: guid,
-          action: reducer.name,
+          action: reducer.trigger,
           canceled: canceled,
           payload: payload,
           reducer_index: reducer.index,
@@ -245,7 +245,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @returns a function to be called with an action's payload, which in turn
       * returns the next state, aka the result of `pushState`
       */
-      function applyMiddleware(reducerInvoke, meta){
+      function applyMiddleware(reducerInvoke, meta, revision){
         // ensure meta is immutable in each middleware
         let getMeta = () => meta;
         let exports = {};
@@ -261,11 +261,19 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             if(middleware[n])
               return middleware[n](() => payload_n, getNext(n), getMeta(), exports);
           };
-          // final function of the middleware stack is to apply a state update
-          middleware.push(pushState);
+
+          if(revision)
+            middleware.push( (prev, next, meta) => next(prev()) )
+          else
+            // final function of the middleware stack is to apply a state update
+            middleware.push(pushState);
+
           return payload_0 => middleware[0](() => reducerInvoke(payload_0), getNext(0), getMeta());
         } else {
-          return payload_0 => pushState(() => reducerInvoke(payload_0), 1, getMeta());
+          if(revision)
+            return reducerInvoke
+          else
+            return payload_0 => pushState(() => reducerInvoke(payload_0), 1, getMeta());
         }
       }
 
@@ -361,9 +369,13 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         $$history
         .slice(fromIndex)
         .reduce((last, curr, i) => {
-          let reducerToApply = $$reducers.toJS()[curr.reducerInvoked];
-          let revisedState = reducerToApply.invoke(last.$state.toJS(), curr.payload);
-          // update $state of the current entry
+          let reducer = $$reducers.toJS()[curr.reducerInvoked];
+          let reducerInvoke = payload_0 => reducer.invoke(last.$state.toJS(), payload_0);
+
+          // mimic resolveRequest for the middleware, pass true for `revision`
+          let revisedState = applyMiddleware(reducerInvoke, null, true)(curr.payload)
+
+          // mimic pushState for the merge
           curr.$state = last.$state.mergeDeepWith(merger, revisedState);
           return ($$history[fromIndex + i] = curr);
         }, lastHistory);
@@ -380,6 +392,34 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         });
       }
 
+      let triggerAction = Symbol("trigger action");
+      this[triggerAction] = new Action("trigger");
+
+      // reducer(lastState, otherStoreState){}
+      /*
+      function listenToStore(store, reducerFn){
+        let index = $$reducers.size;
+        let reducer = {
+          trigger: "",
+          invoke: (lastState, payload, auditRecord, indexToken){
+            payload = store.getState(indexToken)
+            reducerFn(lastState, payload)
+          }
+        }
+
+        store[triggerAction]
+        store.onchange((storeState) => {
+
+          queueReduceCycle(index, store.index, storeState)
+          let i = store.index;
+          let stateSnapshot = store.getState(i);
+          // when any undo or redo op is triggered on store, we need to re-evaluate
+          // the store's state at index and listening store's history accordingly
+          queueHistoryRevision
+        }
+      }
+      */
+
       function listenToAction(action, reducerFn, strategy){
         let actionType = action.$$type;
 
@@ -390,7 +430,9 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         let index = $$reducers.size;
 
         let reducer = {
-          name: action.$$name,
+          trigger: action.$$name,
+          // right now reviseHistory is triggering action.didInvoke, which is incorrect?
+          // but revise history doesn't call the middleware, so its not accurately revising
           invoke: (lastState, payload, auditRecord, token) => {
             action.didInvoke(token, auditRecord)
             return reducerFn(lastState, payload);
@@ -440,50 +482,56 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             }
           );
 
-          let registration = {action: action.$$name, index: index}
-          emitter.emit(ACTION_ADDED, registration)
-          return registration;
+          return {action: action.$$name, index: index};
         }
       }
 
 
     /**
     *
-    * @name on
+    * @name when
     * @param {Action} action - created with `new Action(action_name)`
     *   If passed an array, strategies can be defined like so:
-    *   `[{action: <Action>, reducer: <function>,[, strategy: <strategy>]}]`.
+    *   ```
+    *   [
+    *     {action: <Action>, reducer: <function> [,strategy: <strategy>]},
+    *     {action: <Action>, reducer: <function> [,strategy: <strategy>]},
+    *     ...
+    *   ]
+    *   ```
     * @param {function} reducer - the reducer function to execute when the action is called
     * @param {string} [strategy=tail] - one of `'compound'`, `'lead'`, or `'tail'`
     * @desc invoke a reducer against the current state with the payload passed to
     *   action. `reducer` is invoked asyncronously in order relative to other actions being
-    *   listened to with `<StateContainer>.on`
+    *   listened to with `<StateContainer>.when`
     * @method
     * @instance
     * @memberof StateStore
     */
       this.when = function when(action, reducer, strategy){
         if( isFunction(action) ){
-          return listenToAction(action, reducer, strategy);
+          listenToAction(action, reducer, strategy);
         } else if(isArray(action)){
-          return action.reduce((acc, o) => {
+          action.forEach((o) => {
             if(isPlainObject(o)){
-              // [{action: <Action>[,strategy: <strategy>], ...}]
-              acc.push( listenToAction(o.action, o.reducer, o.strategy) );
+              /*
+
+              */
+              listenToAction(o.action, o.reducer, o.strategy);
             }
-            return acc;
-          }, []);
+          });
         }
+        return this;
       };
 
-    // set the store's first reducer as a noop
-    this.when(new Action('noop'), lastState => lastState);
+      // set the store's first reducer as a noop
+      this.when(new Action('noop'), lastState => lastState);
 
-    // set a second reducer to handle direct setState operations
-    let action_setState = new Action("setState");
-    let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
+      // set a second reducer to handle direct setState operations
+      let action_setState = new Action("setState");
+      let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
 
-    this.when(action_setState, reducer_setState, Action.strategies.COMPOUND);
+      this.when(action_setState, reducer_setState, Action.strategies.COMPOUND);
 
 
     /**
@@ -642,6 +690,9 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         }
       };
     }
+
+    // end constructor
+    // start prototype methods
 
     /**
     *

@@ -390,10 +390,11 @@ describe("transforming state through actions", () => {
       spyOn(clearCart,  'didInvoke').and.callThrough()
       spyOn(checkout,   'didInvoke').and.callThrough()
 
-      store.when(addItem, onAddItem, 'compound')
-      store.when(removeItem, onRemoveItem, 'compound')
-      store.when(clearCart, onClearCart)
-      store.when(checkout, onCheckout)
+      store
+        .when(addItem, onAddItem, 'compound')
+        .when(removeItem, onRemoveItem, 'compound')
+        .when(clearCart, onClearCart)
+        .when(checkout, onCheckout)
     });
 
     it("invokes only the actions triggered in each reduce cycle", () => {

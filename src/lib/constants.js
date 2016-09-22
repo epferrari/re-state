@@ -25,5 +25,4 @@ module.exports = keyMirror([
   "STATE_CHANGE",
   "SET_STATE_INVOKED",
   "REDUCE_INVOKED",
-  "ACTION_ADDED"
 ]);
