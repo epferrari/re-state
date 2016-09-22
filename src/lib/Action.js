@@ -14,10 +14,12 @@ module.exports = class Action {
 
 		function undo(token){
 			emit(UNDO_ACTION, token, (calls[token] || []));
-			return () => {
-				emit(REDO_ACTION, token, (calls[token] || []));
-				return () => undo(token);
-			}
+			return () => redo(token);
+		}
+
+		function redo(token){
+			emit(REDO_ACTION, token, (calls[token] || []));
+			return () => undo(token);
 		}
 
 		const functor = function functor(payload){
@@ -28,7 +30,7 @@ module.exports = class Action {
 			// calling undo returns a redo function. calling the redo function returns the undo function.
 			// (pretty cool, huh?)
 			return undo.bind(null, callCount);
-		}
+		};
 
 		getter(functor, 'callCount', () => callCount);
 

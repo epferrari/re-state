@@ -431,8 +431,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
         let reducer = {
           trigger: action.$$name,
-          // right now reviseHistory is triggering action.didInvoke, which is incorrect?
-          // but revise history doesn't call the middleware, so its not accurately revising
           invoke: (lastState, payload, auditRecord, token) => {
             action.didInvoke(token, auditRecord)
             return reducerFn(lastState, payload);
@@ -481,8 +479,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               auditRecord && redo(auditRecord.$$index, auditRecord.guid);
             }
           );
-
-          return {action: action.$$name, index: index};
         }
       }
 
@@ -512,11 +508,8 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         if( isFunction(action) ){
           listenToAction(action, reducer, strategy);
         } else if(isArray(action)){
-          action.forEach((o) => {
+          action.forEach(o => {
             if(isPlainObject(o)){
-              /*
-
-              */
               listenToAction(o.action, o.reducer, o.strategy);
             }
           });
@@ -525,14 +518,24 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       };
 
       // set the store's first reducer as a noop
+      // we use this action/reducer when a state has been reverted so it gets
+      // so it gets passed through on subsequent revisions further back in the stack
       this.when(new Action('noop'), lastState => lastState);
 
       // set a second reducer to handle direct setState operations
       let action_setState = new Action("setState");
       let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
-
       this.when(action_setState, reducer_setState, Action.strategies.COMPOUND);
 
+      // set a third reducer that entirely replaces the state with a new state
+      let action_replaceState = new Action('replaceState');
+      let reducer_replaceState = (lastState, newState) => {
+        return reduce(lastState, (acc, val, key) => {
+          acc[key] = newState[key] || "$unset";
+          return acc;
+        }, newState);
+      };
+      this.when(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
 
     /**
     *
@@ -552,18 +555,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           return action_setState(deltaMap);
         }
       };
-
-
-      // set a third reducer that entirely replaces the state with a new state
-      let action_replaceState = new Action('replaceState');
-      let reducer_replaceState = (lastState, newState) => {
-        return reduce(lastState, (acc, val, key) => {
-          acc[key] = newState[key] || "$unset";
-          return acc;
-        }, newState);
-      };
-
-      this.when(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
 
 
     /**
