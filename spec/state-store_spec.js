@@ -15,7 +15,7 @@ describe("State Store", () => {
 
   afterEach(jasmine.clock().uninstall)
 
-  describe("constructor", () => {
+  describe("#constructor", () => {
     it("initializes with an `immutable` state", () => {
       store = new Store({
         rabbit: "MQ"
@@ -75,7 +75,7 @@ describe("State Store", () => {
     });
   });
 
-  describe("setState(delta)", () => {
+  describe("#setState", () => {
     var stateSetter;
     beforeEach(() => {
       store = new Store();
@@ -256,7 +256,7 @@ describe("State Store", () => {
 
 
 
-  describe("replaceState(newState)", () => {
+  describe("#replaceState", () => {
     beforeEach(() => {
       store = new Store({rabbit: "MQ"});
     });
@@ -269,7 +269,7 @@ describe("State Store", () => {
     });
   });
 
-  describe("reset()", () => {
+  describe("#reset", () => {
     let addThing, onAddThing;
 
     beforeEach(() => {
@@ -285,7 +285,7 @@ describe("State Store", () => {
       store.when(addThing, onAddThing, Action.strategies.COMPOUND);
     });
 
-    describe("soft reset", () => {
+    describe("given no argument (soft reset)", () => {
       it("resets the state to initial state and adds it to history stack", () => {
         expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
@@ -324,7 +324,7 @@ describe("State Store", () => {
       });
     });
 
-    describe("hard reset", () => {
+    describe("given an argument of true (hard reset)", () => {
       it("resets the state to initial state and resets the history stack", () => {
         expect(store.depth).toEqual(1);
         store.setState({rabbit: "Roger"});
@@ -385,32 +385,32 @@ describe("State Store", () => {
   });
 
 
-  describe("resetToState(index)", () => {
+  describe("#resetToState", () => {
 
   });
 
 
-  describe("fastForward(n)", () => {
+  describe("#fastForward", () => {
 
   });
 
 
-  describe("rewind(n)", () => {
+  describe("#rewind", () => {
 
   });
 
 
-  describe("goto(index)", () => {
+  describe("#goto", () => {
 
   });
 
 
-  describe("getImmutableState()", () => {
+  describe("#getImmutableState", () => {
 
   });
 
 
-  describe("getInitialState()", () =>{
+  describe("#getInitialState", () =>{
     beforeEach(() =>{
       store = new Store({rabbit: "MQ"});
     });
@@ -426,7 +426,7 @@ describe("State Store", () => {
     });
   });
 
-  describe("getState", () => {
+  describe("#getState", () => {
     beforeEach(() => {
       store = new Store({rabbit: "MQ"});
     })
@@ -451,12 +451,12 @@ describe("State Store", () => {
   })
 
 
-  describe("addListener(listener, thisBinding)", () => {
+  describe("#onchange", () => {
 
   });
 
 
-  describe("trigger()", () => {
+  describe("#trigger", () => {
     let subscriber;
 
     beforeEach(() =>{
@@ -464,7 +464,7 @@ describe("State Store", () => {
 
       let _subscriber = (state, lastState) => {}
       subscriber = jasmine.createSpy('subscriber')//.and.callFake(_subscriber);
-      store.addListener(subscriber);
+      store.onchange(subscriber);
     });
 
     it("triggers state subscribers with the current state and last state", () => {

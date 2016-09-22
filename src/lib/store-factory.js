@@ -731,7 +731,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
     /**
     *
-    * @name addListener
+    * @name onchange
     * @desc subscribe a function to changes in store state
     * @param {function} listener
     * @param {object} [thisBinding=Object.create(null)]
@@ -740,12 +740,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @instance
     * @memberof StateStore
     */
-    addListener(listener, thisBinding){
+    onchange(listener, thisBinding){
       return this._emitter.on(STATE_CHANGE, listener, thisBinding);
     }
 
-    onchange(listener, thisBinding){
-      return this.addListener(listener, thisBinding);
+    addListener(listener, thisBinding){
+      return this.onchange(listener, thisBinding);
     }
 
     /**
