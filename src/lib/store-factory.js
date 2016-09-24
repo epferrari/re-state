@@ -12,7 +12,8 @@ const {getter, defineProperty} = require('./utils');
 const {
   ACTION, ASYNC_ACTION,
   STATE_CHANGE, REDUCE_INVOKED,
-  READY, QUEUED, REDUCING } = require('./constants');
+  READY, QUEUED, REDUCING,
+  RESOLVE, CANCEL, UNDO, REDO} = require('./constants');
 
 module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
@@ -236,10 +237,10 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
         let meta = {
           action_name: reducer.actionName,
-          canceled: canceled,
-          revision: false,
           guid: auditRecord.guid,
+          index: ($$index + 1),
           last_state: JSON.stringify(lastState),
+          operation: (canceled ? CANCEL : RESOLVE),
           payload: payload,
           reducer_position: reducer.position
         };
@@ -255,6 +256,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * returns the next state, aka the result of `pushState`
       */
       function applyMiddleware(reducerInvoke, meta){
+        let isRevision = (meta.operation === UNDO) || (meta.operation === REDO);
         if($$middleware.length){
           let middleware, getNext, exports = {};
 
@@ -267,7 +269,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               return middleware[n](() => payload_n, getNext(n), clone(meta), exports);
           };
 
-          if(meta.revision)
+          if(isRevision)
             // just pass the transformed state thru as the final fn in middleware
             middleware.push( (prev, next, meta) => next(prev()) )
           else
@@ -277,7 +279,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           return (payload_0) =>
             middleware[0](() => reducerInvoke(payload_0), getNext(0), clone(meta));
         } else {
-          if(meta.revision)
+          if(isRevision)
             return reducerInvoke;
           else
             return (payload_0) =>
@@ -323,7 +325,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
           // ensure a history state is created, but immediately revert it syncronously
           // so we don't kick off a new reduce cycle
-          if(meta.canceled)
+          if(meta.operation === CANCEL)
             undo($$index, meta.guid);
         }
 
@@ -379,7 +381,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       function queueRedo(atIndex, guid){
         if(redo(atIndex, guid))
           // revise subsequent history entries according to revised state at index
-          queueHistoryRevision(atIndex + 1);
+          queueHistoryRevision(atIndex);
       }
 
       function queueHistoryRevision(fromIndex){
@@ -391,21 +393,31 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         $$history
           .slice(fromIndex)
           .reduce((prevEntry, entry, i) => {
-            let reducer = $$reducers.toJS()[entry.reducerInvoked];
-            let prevState = prevEntry.$state.toJS();
-            let reducerInvoke = payload_0 => reducer.invoke(prevState, payload_0);
+            let reducers = $$reducers.toJS(),
+                reducer = reducers[entry.reducerInvoked],
+                prevState = prevEntry.$state.toJS(),
+                reducerInvoke = payload_0 => reducer.invoke(prevState, payload_0),
+                originalReducer;
+
+            if(entry.reverted){
+              originalReducer = reducers[entry.original.reducerInvoked];
+            }else{
+              originalReducer = reducer;
+            }
+
 
             // mimic resolveRequest for the middleware, add revision type key
             let meta = {
-              action_name: reducer.actionName,
+              action_name: originalReducer.actionName,
               guid: entry.guid,
-              revision: (entry.reverted ? "undo" : "redo"),
+              index: (fromIndex + i),
               last_state: JSON.stringify(prevState),
+              operation: (entry.reverted ? UNDO : REDO),
               payload: entry.payload,
-              reducer_position: reducer.position
+              reducer_position: originalReducer.position,
             };
 
-            let revisedDelta = applyMiddleware(reducerInvoke, meta)(entry.payload)
+            let revisedDelta = applyMiddleware(reducerInvoke, meta)(entry.payload);
 
             // mimic pushState for the merge
             entry.$state = prevEntry.$state.mergeDeepWith(merger, revisedDelta);

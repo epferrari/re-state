@@ -18,7 +18,7 @@ describe("middleware", () => {
   beforeEach(() => {
     jasmine.clock().install();
 
-    tick = () => jasmine.clock().tick(0);
+    tick = n => jasmine.clock().tick(n || 0);
 
     callOrder = [];
     log = [];
@@ -152,6 +152,98 @@ describe("middleware", () => {
     tick()
     // expecting that the key 'something' got pruned before adding to history state
     expect(store.state.something).toBeUndefined()
+  });
+
+  it("receives meta data about action invocations", () => {
+    addItem(0);
+    addItem(0);
+    addItem(1);
+    addItem(2);
+    tick();
+
+    // logger middleware pushes meta to log array
+    expect(log[0]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 1,
+      operation: "RESOLVE",
+      payload: 0
+    }));
+
+    expect(log[3]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 4,
+      operation: "RESOLVE",
+      payload: 2
+    }));
+  });
+
+  it("receives meta data about actions that are undone/redone", () => {
+    let undoAdd = addItem(1);
+    tick();
+
+    expect(log.length).toBe(1);
+    let redoAdd = undoAdd();
+    tick();
+
+    expect(log.length).toBe(2);
+    expect(log[1]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 1,
+      operation: "UNDO",
+      payload: {}
+    }));
+
+    redoAdd();
+    tick();
+
+    expect(log.length).toBe(3);
+    expect(log[2]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 1,
+      operation: "REDO",
+      payload: 1
+    }));
+  });
+
+  it('receives meta data about actions that are canceled', () => {
+    let undoAdd = addItem(0);
+    undoAdd();
+
+    tick();
+    expect(log.length).toBe(1);
+    expect(log[0]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 1,
+      operation: "CANCEL",
+      payload: 0
+    }));
+
+    // invoke, undo, redo
+    addItem(1)()();
+    // history entry wasn't written yet, so it should resolve as usual
+    tick();
+    expect(log.length).toBe(2);
+    expect(log[1]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 2,
+      operation: "RESOLVE",
+      payload: 1
+    }));
+
+    // invoke and undo
+    let redoAdd = addItem(2)();
+    tick();
+    expect(log.length).toBe(3);
+
+    redoAdd();
+    tick();
+    expect(log.length).toBe(4);
+    expect(log[3]).toEqual(jasmine.objectContaining({
+      action_name: 'addItem',
+      index: 3,
+      operation: 'REDO',
+      payload: 2
+    }));
   });
 
   it("throws an error when an action is called from inside middleware", () => {

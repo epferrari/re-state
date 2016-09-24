@@ -16,6 +16,12 @@ module.exports = keyMirror([
   "QUEUED",
   "REDUCING",
 
+  // reducer operations
+  "RESOLVE",
+  "CANCEL",
+  "UNDO",
+  "REDO",
+  
   // action events
   "ACTION_TRIGGERED",
   "UNDO_ACTION",
