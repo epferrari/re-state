@@ -171,6 +171,33 @@ describe("transforming state through actions", () => {
           expect(store.state.cart).toEqual([{id: 1, qty: 1}])
         });
       });
+
+      describe("when the same undo or redo function is called multiple times", () => {
+        it("only triggers one reduce cycle", () => {
+          let undoAdd = addItem(1)
+          tick()
+          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+          expect(store.trigger).toHaveBeenCalledTimes(1)
+
+          let redoAdd = undoAdd()
+          tick()
+          expect(store.state.cart).toEqual([])
+          expect(store.trigger).toHaveBeenCalledTimes(2)
+
+          undoAdd()
+          tick()
+          expect(store.trigger).toHaveBeenCalledTimes(2)
+
+          redoAdd()
+          tick()
+          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+          expect(store.trigger).toHaveBeenCalledTimes(3)
+
+          redoAdd()
+          tick()
+          expect(store.trigger).toHaveBeenCalledTimes(3)
+        });
+      });
     });
 
     describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {

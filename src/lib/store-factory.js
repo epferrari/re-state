@@ -133,8 +133,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             phase = REDUCING;
             let shouldTrigger;
 
+            // TODO: provide option for revisions to happen after reduce cycle?
             if(pendingRevisions.length){
               shouldTrigger = true;
+              // TODO: we don't need to revise history for each of these, we
+              // just need to revise history from the earliest revision index b/c
+              // all of the entries are already updated in the history stack
               pendingRevisions.forEach(reviseHistory);
               pendingRevisions = [];
             }
@@ -283,7 +287,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @returns a new state object
       */
       function pushState(getDelta, noop, meta){
-        let delta, nextImmutableState;
+        let delta, lastState, nextState;
 
         delta = getDelta();
         if( !isPlainObject(delta) ) throw new InvalidReturnError();
@@ -291,26 +295,33 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         // remove any history past current index
         $$history = $$history.slice(0, $$index + 1);
 
-        nextImmutableState = $$history[$$index].$state.mergeDeepWith(merger, delta);
+        lastState = $$history[$$index].$state;
+        nextState = lastState.mergeDeepWith(merger, delta);
         // add a new state to the $$history and increment index
         // return state to the next reducer
-        if(!Immutable.is($$history[$$index].$state, nextImmutableState)){
+        if(!Immutable.is(lastState, nextState)){
           $$history = $$history.slice(0, $$index + 1);
-          // add new entry to history
-          $$history.push({
-            $state: nextImmutableState,
+
+          let entry = {
+            $state: nextState,
             guid: meta.guid,
             payload: meta.payload,
             reducerInvoked: meta.reducer_position
-          });
+          };
+
+          // add new entry to history
+          $$history.push(entry);
+
           // update the pointer to new state in $$history
           $$index++;
 
-          // ensure a history state is created, but immediately revert it
+          // ensure a history state is created, but immediately revert it syncronously
+          // so we don't kick off a new reduce cycle
           if(meta.canceled)
             undo($$index, meta.guid);
         }
-        return nextImmutableState.toJS();
+
+        return $$history[$$index].$state.toJS();
       }
 
 			function undo(atIndex, guid){
@@ -319,7 +330,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         // and an undo could break the history stack in unpredicatable ways
         if($$history[atIndex] && $$history[atIndex].guid === guid){
 
-          //let originalGuid = $$history[atIndex].guid;
           let lastHistory = $$history[atIndex - 1];
 
           if(!$$history[atIndex].reverted){
@@ -331,28 +341,39 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               payload: {},
               reducerInvoked: 0,
               reverted: true
-            }
-
-            // revise subsequent history entries according to revised state at index
-            let fromIndex = atIndex;
-            queueHistoryRevision(fromIndex);
+            };
+            return true;
           }
+          return false;
+        } else {
+          return false;
+        }
+      }
 
+      function queueUndo(atIndex, guid){
+        if(undo(atIndex, guid))
+          // revise subsequent history entries according to revised state at index
+          queueHistoryRevision(atIndex);
+      }
+
+      function redo(atIndex, guid){
+        // ensure that a new history tree wasn't created at an index before atIndex
+        if(
+          $$history[atIndex] &&
+          $$history[atIndex].guid === guid &&
+          $$history[atIndex].reverted
+        ){
+          $$history[atIndex] = $$history[atIndex].original;
           return true;
         } else {
           return false;
         }
       }
 
-      function redo(atIndex, guid){
-        // ensure that a new history tree wasn't created at an index before atIndex
-        if($$history[atIndex].guid === guid){
-          $$history[atIndex] = $$history[atIndex].original;
+      function queueRedo(atIndex, guid){
+        if(redo(atIndex, guid))
+          // revise subsequent history entries according to revised state at index
           queueHistoryRevision(atIndex + 1);
-          return true;
-        } else {
-          return false;
-        }
       }
 
       function queueHistoryRevision(fromIndex){
@@ -466,7 +487,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               let auditRecord = auditRecords.find(ar => {
                 return (ar.$$container_id === $$container_id);
               });
-              auditRecord && undo(auditRecord.$$index, auditRecord.guid);
+              auditRecord && queueUndo(auditRecord.$$index, auditRecord.guid);
             }
           );
 
@@ -478,7 +499,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               let auditRecord = auditRecords.find(ar => {
                 return (ar.$$container_id === $$container_id);
               });
-              auditRecord && redo(auditRecord.$$index, auditRecord.guid);
+              auditRecord && queueRedo(auditRecord.$$index, auditRecord.guid);
             }
           );
         }
