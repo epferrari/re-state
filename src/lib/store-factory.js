@@ -133,13 +133,15 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             phase = REDUCING;
             let shouldTrigger;
 
-            // TODO: provide option for revisions to happen after reduce cycle?
+            // TODO: possibly provide option for revisions to happen after reduce cycle?
             if(pendingRevisions.length){
               shouldTrigger = true;
-              // TODO: we don't need to revise history for each of these, we
-              // just need to revise history from the earliest revision index b/c
-              // all of the entries are already updated in the history stack
-              pendingRevisions.forEach(reviseHistory);
+              
+              let fromIndex = pendingRevisions.reduce((acc, n) => {
+                return Math.min(n, acc);
+              }, pendingRevisions[0]);
+
+              reviseHistory(fromIndex);
               pendingRevisions = [];
             }
 

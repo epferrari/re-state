@@ -91,326 +91,324 @@ describe("transforming state through actions", () => {
 
   afterEach(() => jasmine.clock().uninstall())
 
-  describe("with a single Action reducer", () => {
-    describe("using Action's returned undo/redo functions", () => {
-      beforeEach(() => {
-        store.when(addItem, onAddItem)
-      });
-
-      it("undoes the action's effect on state", () => {
-        let undoAdd = addItem(0)
-        expect(store.trigger).not.toHaveBeenCalled()
-
-        tick()
-        expect(store.state.cart).toEqual([{id:0, qty:1}])
-        expect(store.trigger).toHaveBeenCalledTimes(1)
-
-        let redoAdd = undoAdd()
-        tick()
-        expect(store.state.cart).toEqual([]);
-        expect(store.trigger).toHaveBeenCalledTimes(2)
-
-        let undoRedo = redoAdd()
-        tick()
-        expect(store.state.cart).toEqual([{id:0, qty:1}])
-        expect(store.trigger).toHaveBeenCalledTimes(3)
-
-        undoRedo()
-        tick()
-        expect(store.state.cart).toEqual([])
-        expect(store.trigger).toHaveBeenCalledTimes(4)
-      });
-
-      it("does not add or remove states from the history", () => {
-        expect(store.depth).toBe(1)
-
-        let undoAdd = addItem(0)
-        tick()
-
-        expect(store.trigger).toHaveBeenCalledTimes(1)
-        expect(store.depth).toBe(2)
-
-        let redoAdd = undoAdd()
-        tick()
-        expect(store.trigger).toHaveBeenCalledTimes(2)
-        expect(store.depth).toBe(2)
-      });
-
-      it("executes asyncronously", () => {
-        let undoAdd = addItem(0);
-        expect(store.trigger).not.toHaveBeenCalled()
-        expect(store.state.cart).toEqual([])
-
-        undoAdd()
-        expect(store.trigger).not.toHaveBeenCalled()
-        expect(store.state.cart).toEqual([])
-
-        tick()
-        expect(store.trigger).toHaveBeenCalledTimes(1)
-        expect(store.state.cart).toEqual([])
-      });
-
-      describe("when the action is undone before next tick", () => {
-        it("still pushes a state to history", () => {
-          expect(store.depth).toBe(1)
-          let undoAdd = addItem(0)
-          undoAdd()
-          tick()
-          expect(store.depth).toBe(2)
-        });
-
-        it("can be redone and correctly apply state", () => {
-          let undoAdd = addItem(1)
-          let redoAdd = undoAdd()
-
-          tick()
-          expect(store.state.cart).toEqual([])
-
-          redoAdd()
-          tick()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-        });
-      });
-
-      describe("when the same undo or redo function is called multiple times", () => {
-        it("only triggers one reduce cycle", () => {
-          let undoAdd = addItem(1)
-          tick()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-          expect(store.trigger).toHaveBeenCalledTimes(1)
-
-          let redoAdd = undoAdd()
-          tick()
-          expect(store.state.cart).toEqual([])
-          expect(store.trigger).toHaveBeenCalledTimes(2)
-
-          undoAdd()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(2)
-
-          redoAdd()
-          tick()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-          expect(store.trigger).toHaveBeenCalledTimes(3)
-
-          redoAdd()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(3)
-        });
-      });
+  describe("using Action's returned undo/redo functions", () => {
+    beforeEach(() => {
+      store.when(addItem, onAddItem)
     });
 
-    describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
-      beforeEach(() => {
-        store.when(addItem, onAddItem, 'TAIL');
+    it("undoes the action's effect on state", () => {
+      let undoAdd = addItem(0)
+      expect(store.trigger).not.toHaveBeenCalled()
+
+      tick()
+      expect(store.state.cart).toEqual([{id:0, qty:1}])
+      expect(store.trigger).toHaveBeenCalledTimes(1)
+
+      let redoAdd = undoAdd()
+      tick()
+      expect(store.state.cart).toEqual([]);
+      expect(store.trigger).toHaveBeenCalledTimes(2)
+
+      let undoRedo = redoAdd()
+      tick()
+      expect(store.state.cart).toEqual([{id:0, qty:1}])
+      expect(store.trigger).toHaveBeenCalledTimes(3)
+
+      undoRedo()
+      tick()
+      expect(store.state.cart).toEqual([])
+      expect(store.trigger).toHaveBeenCalledTimes(4)
+    });
+
+    it("does not add or remove states from the history", () => {
+      expect(store.depth).toBe(1)
+
+      let undoAdd = addItem(0)
+      tick()
+
+      expect(store.trigger).toHaveBeenCalledTimes(1)
+      expect(store.depth).toBe(2)
+
+      let redoAdd = undoAdd()
+      tick()
+      expect(store.trigger).toHaveBeenCalledTimes(2)
+      expect(store.depth).toBe(2)
+    });
+
+    it("executes asyncronously", () => {
+      let undoAdd = addItem(0);
+      expect(store.trigger).not.toHaveBeenCalled()
+      expect(store.state.cart).toEqual([])
+
+      undoAdd()
+      expect(store.trigger).not.toHaveBeenCalled()
+      expect(store.state.cart).toEqual([])
+
+      tick()
+      expect(store.trigger).toHaveBeenCalledTimes(1)
+      expect(store.state.cart).toEqual([])
+    });
+
+    describe("when the action is undone before next tick", () => {
+      it("still pushes a state to history", () => {
+        expect(store.depth).toBe(1)
+        let undoAdd = addItem(0)
+        undoAdd()
+        tick()
+        expect(store.depth).toBe(2)
       });
 
-      it("updates the state from the last call to reducer", () => {
-        expect(store.state.cart).toEqual([])
-        addItem(0)
-        addItem(2)
-        addItem(1)
+      it("can be redone and correctly apply state", () => {
+        let undoAdd = addItem(1)
+        let redoAdd = undoAdd()
 
+        tick()
+        expect(store.state.cart).toEqual([])
+
+        redoAdd()
         tick()
         expect(store.state.cart).toEqual([{id: 1, qty: 1}])
       });
-
-      describe("undoing with `TAIL` strategy", () => {
-        it("sets the state back to before the last action was called", () => {
-          expect(store.state.cart).toEqual([])
-          let undoAdd = addItem(0)
-
-          tick()
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}])
-
-          undoAdd()
-          tick()
-          expect(store.state.cart).toEqual([])
-        });
-
-        it("does not update the state for reducer actions that were discarded by the tailing strategy", () => {
-          let undoAdd0 = addItem(0)
-          let undoAdd2 = addItem(2)
-          let undoAdd1 = addItem(1)
-
-          tick()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-          expect(store.trigger).toHaveBeenCalledTimes(1)
-          store.trigger.calls.reset()
-
-          undoAdd0()
-          tick()
-          expect(store.trigger).not.toHaveBeenCalled()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-
-          undoAdd2()
-          tick()
-          expect(store.trigger).not.toHaveBeenCalled()
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}])
-
-          undoAdd1()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(1)
-          expect(store.state.cart).toEqual([])
-        });
-      });
     });
 
-    describe("using the `HEAD` strategy (Action.strategies.HEAD)", () => {
-      beforeEach(() => store.when(addItem, onAddItem, 'HEAD'));
-
-      it("updates the state from the first call to reducer action", () => {
-        expect(store.state.cart).toEqual([]);
-        addItem(0)
-        addItem(2)
-        addItem(1)
-
+    describe("when the same undo or redo function is called multiple times", () => {
+      it("only triggers one reduce cycle", () => {
+        let undoAdd = addItem(1)
         tick()
-        expect(store.state.cart).toEqual([{id: 0, qty: 1}])
-      });
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+        expect(store.trigger).toHaveBeenCalledTimes(1)
 
-      describe("undoing with `HEAD` strategy", () => {
-        it("sets the state back to before the first action was called", () => {
-          expect(store.state.cart).toEqual([])
-          let undoAdd = addItem(0)
-
-          tick()
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}])
-
-          undoAdd()
-          tick()
-          expect(store.state.cart).toEqual([])
-        });
-
-        it("does not update the state for reducer actions that were discarded by the head strategy", () => {
-          let undoAdd0 = addItem(0);
-          let undoAdd2 = addItem(2);
-          let undoAdd1 = addItem(1);
-
-          let $addItem = store.reducers[3];
-          spyOn($addItem, 'invoke').and.callThrough()
-
-          tick()
-
-          expect($addItem.invoke).toHaveBeenCalledTimes(1);
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          store.trigger.calls.reset();
-
-          undoAdd1();
-          tick()
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd2();
-          tick()
-          expect(store.trigger).not.toHaveBeenCalled();
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd0();
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.cart).toEqual([]);
-        });
-      });
-    });
-
-    describe("using the `COMPOUND` strategy (Action.strategies.COMPOUND)", () => {
-      beforeEach(() => store.when(addItem, onAddItem, 'COMPOUND'));
-
-      it("updates the state with all results of reducer action", () => {
-        expect(store.state.cart).toEqual([]);
-
-        addItem(0);
-        addItem(1);
-        addItem(2);
-        addItem(0);
-        addItem(2);
-
+        let redoAdd = undoAdd()
         tick()
+        expect(store.state.cart).toEqual([])
+        expect(store.trigger).toHaveBeenCalledTimes(2)
 
-        expect(store.trigger).toHaveBeenCalledTimes(1);
-        expect(store.state.cart.length).toEqual(3);
+        undoAdd()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(2)
 
-        expect(store.state.cart[0]).toEqual({id: 0, qty: 2});
-        expect(store.state.cart[1]).toEqual({id: 1, qty: 1});
-        expect(store.state.cart[2]).toEqual({id: 2, qty: 2});
-      });
+        redoAdd()
+        tick()
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+        expect(store.trigger).toHaveBeenCalledTimes(3)
 
-      describe("undoing with `COMPOUND` strategy", () => {
-        it("resets the state to before X action was called", () => {
-          expect(store.state.cart).toEqual([]);
-          let undoAdd1 = addItem(0);
-          let undoAdd2 = addItem(0);
-          let undoAdd3 = addItem(0);
-
-          tick()
-          expect(store.state.cart).toEqual([{id: 0, qty: 3}]);
-
-          undoAdd3();
-          tick()
-          expect(store.state.cart).toEqual([{id: 0, qty: 2}]);
-
-          undoAdd2();
-          tick()
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
-
-          undoAdd1();
-          tick()
-          expect(store.state.cart).toEqual([])
-        });
-
-        it("noops the undo function once it is called", () =>{
-          expect(store.state.cart).toEqual([]);
-          let undoAdd1 = addItem(0);
-
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.cart).toEqual([{id:0, qty: 1}]);
-
-          undoAdd1()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-          expect(store.state.cart).toEqual([])
-
-          undoAdd1()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-        });
-
-        it("leaves rest of state transformations intact", () =>{
-          expect(store.state.cart).toEqual([]);
-          let undoAdd0 = addItem(0);
-          let undoAdd2 = addItem(2);
-          let undoAdd1 = addItem(1);
-          addItem(2);
-
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(1);
-          expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 2, qty: 2}, {id: 1, qty: 1}]);
-
-          undoAdd2()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(2);
-          // notice that id:2 is now at the end. When history states were revised,
-          // 2 was pushed by the last call to addItem because it's as if the first call with id:2 never happened
-          expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
-
-          let redoAdd0 = undoAdd0()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(3);
-          expect(store.state.cart).toEqual([{id: 1, qty: 1}, {id: 2, qty: 1}])
-
-          redoAdd0()
-          tick()
-          expect(store.trigger).toHaveBeenCalledTimes(4);
-          expect(store.state.cart).toEqual([{id: 0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
-        });
+        redoAdd()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(3)
       });
     });
   });
 
-  describe("when multiple reducers are registered with a store", () => {
+  describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
+    beforeEach(() => {
+      store.when(addItem, onAddItem, Action.strategies.TAIL);
+    });
+
+    it("updates the state from the last call to reducer", () => {
+      expect(store.state.cart).toEqual([])
+      addItem(0)
+      addItem(2)
+      addItem(1)
+
+      tick()
+      expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+    });
+
+    describe("undoing with `TAIL` strategy", () => {
+      it("sets the state back to before the last action was called", () => {
+        expect(store.state.cart).toEqual([])
+        let undoAdd = addItem(0)
+
+        tick()
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}])
+
+        undoAdd()
+        tick()
+        expect(store.state.cart).toEqual([])
+      });
+
+      it("does not update the state for reducer actions that were discarded by the tailing strategy", () => {
+        let undoAdd0 = addItem(0)
+        let undoAdd2 = addItem(2)
+        let undoAdd1 = addItem(1)
+
+        tick()
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+        expect(store.trigger).toHaveBeenCalledTimes(1)
+        store.trigger.calls.reset()
+
+        undoAdd0()
+        tick()
+        expect(store.trigger).not.toHaveBeenCalled()
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+
+        undoAdd2()
+        tick()
+        expect(store.trigger).not.toHaveBeenCalled()
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}])
+
+        undoAdd1()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(1)
+        expect(store.state.cart).toEqual([])
+      });
+    });
+  });
+
+  describe("using the `HEAD` strategy (Action.strategies.HEAD)", () => {
+    beforeEach(() => store.when(addItem, onAddItem, Action.strategies.HEAD));
+
+    it("updates the state from the first call to reducer action", () => {
+      expect(store.state.cart).toEqual([]);
+      addItem(0)
+      addItem(2)
+      addItem(1)
+
+      tick()
+      expect(store.state.cart).toEqual([{id: 0, qty: 1}])
+    });
+
+    describe("undoing with `HEAD` strategy", () => {
+      it("sets the state back to before the first action was called", () => {
+        expect(store.state.cart).toEqual([])
+        let undoAdd = addItem(0)
+
+        tick()
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}])
+
+        undoAdd()
+        tick()
+        expect(store.state.cart).toEqual([])
+      });
+
+      it("does not update the state for reducer actions that were discarded by the head strategy", () => {
+        let undoAdd0 = addItem(0);
+        let undoAdd2 = addItem(2);
+        let undoAdd1 = addItem(1);
+
+        let $addItem = store.reducers[3];
+        spyOn($addItem, 'invoke').and.callThrough()
+
+        tick()
+
+        expect($addItem.invoke).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        store.trigger.calls.reset();
+
+        undoAdd1();
+        tick()
+        expect(store.trigger).not.toHaveBeenCalled();
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+        undoAdd2();
+        tick()
+        expect(store.trigger).not.toHaveBeenCalled();
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+        undoAdd0();
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([]);
+      });
+    });
+  });
+
+  describe("using the `COMPOUND` strategy (Action.strategies.COMPOUND)", () => {
+    beforeEach(() => store.when(addItem, onAddItem, Action.strategies.COMPOUND));
+
+    it("updates the state with all results of reducer action", () => {
+      expect(store.state.cart).toEqual([]);
+
+      addItem(0);
+      addItem(1);
+      addItem(2);
+      addItem(0);
+      addItem(2);
+
+      tick()
+
+      expect(store.trigger).toHaveBeenCalledTimes(1);
+      expect(store.state.cart.length).toEqual(3);
+
+      expect(store.state.cart[0]).toEqual({id: 0, qty: 2});
+      expect(store.state.cart[1]).toEqual({id: 1, qty: 1});
+      expect(store.state.cart[2]).toEqual({id: 2, qty: 2});
+    });
+
+    describe("undoing with `COMPOUND` strategy", () => {
+      it("resets the state to before X action was called", () => {
+        expect(store.state.cart).toEqual([]);
+        let undoAdd1 = addItem(0);
+        let undoAdd2 = addItem(0);
+        let undoAdd3 = addItem(0);
+
+        tick()
+        expect(store.state.cart).toEqual([{id: 0, qty: 3}]);
+
+        undoAdd3();
+        tick()
+        expect(store.state.cart).toEqual([{id: 0, qty: 2}]);
+
+        undoAdd2();
+        tick()
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}]);
+
+        undoAdd1();
+        tick()
+        expect(store.state.cart).toEqual([])
+      });
+
+      it("noops the undo function once it is called", () =>{
+        expect(store.state.cart).toEqual([]);
+        let undoAdd1 = addItem(0);
+
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([{id:0, qty: 1}]);
+
+        undoAdd1()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(2);
+        expect(store.state.cart).toEqual([])
+
+        undoAdd1()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(2);
+      });
+
+      it("leaves rest of state transformations intact", () =>{
+        expect(store.state.cart).toEqual([]);
+        let undoAdd0 = addItem(0);
+        let undoAdd2 = addItem(2);
+        let undoAdd1 = addItem(1);
+        addItem(2);
+
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 2, qty: 2}, {id: 1, qty: 1}]);
+
+        undoAdd2()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(2);
+        // notice that id:2 is now at the end. When history states were revised,
+        // 2 was pushed by the last call to addItem because it's as if the first call with id:2 never happened
+        expect(store.state.cart).toEqual([{id:0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
+
+        let redoAdd0 = undoAdd0()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(3);
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}, {id: 2, qty: 1}])
+
+        redoAdd0()
+        tick()
+        expect(store.trigger).toHaveBeenCalledTimes(4);
+        expect(store.state.cart).toEqual([{id: 0, qty: 1}, {id: 1, qty: 1}, {id: 2, qty: 1}])
+      });
+    });
+  });
+
+  describe("when a store is listening to many actions", () => {
     beforeEach(() => {
       spyOn(addItem,    'didInvoke').and.callThrough()
       spyOn(removeItem, 'didInvoke').and.callThrough()
@@ -446,6 +444,30 @@ describe("transforming state through actions", () => {
       tick()
       expect(store.state.cart).toEqual([{id: 1, qty: 2}])
       expect(store.state.total).toEqual(1.0);
+    });
+
+    it("performs all undo/redo revisions in batch", () => {
+      let undoAdd1 = addItem(1);
+      let undoAdd2 = addItem(2);
+      let cancelCheckout = checkout();
+
+      tick();
+      expect(store.state.cart).toEqual([
+        {id: 1, qty: 1},
+        {id: 2, qty: 1}
+      ]);
+      expect(store.state.total).toEqual(1.25);
+      expect(store.trigger).toHaveBeenCalledTimes(1);
+
+      undoAdd1();
+      cancelCheckout();
+
+      tick();
+      expect(store.state.cart).toEqual([
+        {id: 2, qty: 1}
+      ]);
+      expect(store.state.total).toBeUndefined();
+      expect(store.trigger).toHaveBeenCalledTimes(2);
     });
   });
 
