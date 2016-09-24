@@ -44,8 +44,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           trigger,
           currentState,
           phase = READY,
-          reducePending = false,
-          reduceExecuting = false,
           pendingRevisions = [];
 
 
@@ -131,22 +129,8 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           // determine whether to push out a state change
           setTimeout(() => {
             phase = REDUCING;
-            let shouldTrigger;
-
             // TODO: possibly provide option for revisions to happen after reduce cycle?
-            if(pendingRevisions.length){
-              shouldTrigger = true;
-              
-              let fromIndex = pendingRevisions.reduce((acc, n) => {
-                return Math.min(n, acc);
-              }, pendingRevisions[0]);
-
-              reviseHistory(fromIndex);
-              pendingRevisions = [];
-            }
-
-            shouldTrigger = executeReduceCycle(currentState()) || shouldTrigger;
-
+            let shouldTrigger = (resolveRevisions() || resolveActions());
             phase = READY;
             if(shouldTrigger) trigger();
           }, 0);
@@ -154,13 +138,32 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       };
 
 
-			/**
-      * @name executeReduceCycle
-      * @desc resolve a series of new states from pending $$reducers
+      /**
+      * @desc
       * @private
+      * @returns {boolean} - whether the store should trigger an update
       */
-      function executeReduceCycle(previousState){
-        emitter.emit(REDUCE_INVOKED);
+      function resolveRevisions(){
+        if(pendingRevisions.length){
+          let fromIndex = pendingRevisions.reduce((acc, n) => {
+            return Math.min(n, acc);
+          }, pendingRevisions[0]);
+
+          reviseHistory(fromIndex);
+          pendingRevisions = [];
+          return true;
+        } else {
+          return false;
+        }
+      }
+
+      /**
+      * @name resolveActions
+      * @desc apply each pending action request to state according to its strategy
+      * @private
+      * @returns {boolean} - whether the store should trigger an update
+      */
+      function resolveActions(){
         let initialIndex = $$index;
         let reducersToCall = chain($$reducers.toJS())
           .filter(reducer => reducer.requests.length)
@@ -176,10 +179,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             return r;
           });
           return nextState;
-        }, merge({}, previousState) );
-
-        // reset for next reduce cycle
-        reducePending = false;
+        }, merge({}, currentState()) );
 
         // was history updated?
         return (initialIndex !== $$index);
@@ -191,7 +191,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @desc resolve an action's invocation against the last state according
       *   to the strategy defined for the action
       * @private
-      * @returns the updated state
+      * @returns {object} - the updated state
       */
 			function resolveReducer(lastState, reducer){
         switch((reducer.strategy || "").toLowerCase()){
@@ -218,7 +218,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       *   action with with action call's `payload` and the last transient state.
       *   Applies middleware and pushes an entry to the history stack
       * @private
-      * @returns next state after middleware has been applied and state has been
+      * @returns {object} - next state after middleware has been applied and state has been
       *   set in history
       */
 			function resolveRequest(lastState, reducer, request){
@@ -286,7 +286,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @desc function with middleware signature called as the last middleware
       * in the stack to create a new state in history
       * @private
-      * @returns a new state object
+      * @returns {object} - the most current state in history
       */
       function pushState(getDelta, noop, meta){
         let delta, lastState, nextState;
@@ -323,7 +323,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             undo($$index, meta.guid);
         }
 
-        return $$history[$$index].$state.toJS();
+        return currentState();
       }
 
 			function undo(atIndex, guid){
