@@ -307,7 +307,7 @@ describe("State Store", () => {
       });
 
       it("recalculates state correctly with reset when a previous action is undone", () => {
-        let undoAddThingA = addThing("A");
+        let addedThingA = addThing("A");
         addThing("B");
         addThing("C");
 
@@ -319,7 +319,7 @@ describe("State Store", () => {
         tick();
         expect(store.state).toEqual({rabbit: "MQ"});
 
-        undoAddThingA();
+        addedThingA.undo();
         expect(store.state).toEqual({rabbit: "MQ"});
       });
     });
@@ -346,8 +346,8 @@ describe("State Store", () => {
       it("nullifies undo functions returned from actions that reduced a now-deleted state history", () => {
         spyOn(store, 'trigger');
 
-        let undoAddThingA = addThing("A"); // resolves to state 2
-        let undoAddThingB = addThing("B"); // resolves to state 3
+        let addedThingA= addThing("A"); // resolves to state 2
+        let addedThingB = addThing("B"); // resolves to state 3
         addThing("C"); // resolves to state 4
 
         expect(store.depth).toEqual(1);
@@ -355,7 +355,7 @@ describe("State Store", () => {
         expect(store.depth).toEqual(4);
         expect(store.state).toEqual({rabbit: "MQ", things: ["A", "B", "C"]});
 
-        let redoAddThingA = undoAddThingA();
+        addedThingA.undo();
         tick();
         // calling undo on addThingA recalculates the state without the delta at version 2
         expect(store.state).toEqual({rabbit: "MQ", things: ["B", "C"]});
@@ -374,8 +374,8 @@ describe("State Store", () => {
         expect(store.state).toEqual({rabbit: "MQ", bunny: "Bugs"});
 
         store.trigger.calls.reset();
-        undoAddThingB();
-        redoAddThingA();
+        addedThingB.undo();
+        addedThingA.redo();
 
         expect(store.trigger).not.toHaveBeenCalled();
         // state 2 was not affected by the undo function that used to point there

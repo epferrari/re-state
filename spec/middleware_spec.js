@@ -178,11 +178,11 @@ describe("middleware", () => {
   });
 
   it("receives meta data about actions that are undone/redone", () => {
-    let undoAdd = addItem(1);
+    let added = addItem(1);
     tick();
 
     expect(log.length).toBe(1);
-    let redoAdd = undoAdd();
+    added.undo();
     tick();
 
     expect(log.length).toBe(2);
@@ -193,7 +193,7 @@ describe("middleware", () => {
       payload: {}
     }));
 
-    redoAdd();
+    added.redo();
     tick();
 
     expect(log.length).toBe(3);
@@ -206,8 +206,8 @@ describe("middleware", () => {
   });
 
   it('receives meta data about actions that are canceled', () => {
-    let undoAdd = addItem(0);
-    undoAdd();
+    let add0 = addItem(0);
+    add0.undo();
 
     tick();
     expect(log.length).toBe(1);
@@ -219,7 +219,9 @@ describe("middleware", () => {
     }));
 
     // invoke, undo, redo
-    addItem(1)()();
+    let add1 = addItem(1);
+    add1.undo();
+    add1.redo();
     // history entry wasn't written yet, so it should resolve as usual
     tick();
     expect(log.length).toBe(2);
@@ -231,11 +233,12 @@ describe("middleware", () => {
     }));
 
     // invoke and undo
-    let redoAdd = addItem(2)();
+    let add2 = addItem(2);
+    add2.undo();
     tick();
     expect(log.length).toBe(3);
 
-    redoAdd();
+    add2.redo();
     tick();
     expect(log.length).toBe(4);
     expect(log[3]).toEqual(jasmine.objectContaining({
