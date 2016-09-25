@@ -21,11 +21,12 @@ module.exports = keyMirror([
   "CANCEL",
   "UNDO",
   "REDO",
-  
+
   // action events
   "ACTION_TRIGGERED",
   "UNDO_ACTION",
   "REDO_ACTION",
+  "CANCEL_ACTION",
 
   // store events
   "STATE_CHANGE",

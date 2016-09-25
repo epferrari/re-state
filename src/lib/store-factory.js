@@ -506,12 +506,13 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
               updatePendingReducer(position, token, {canceled: true});
 
               // if not pending, then an action alters history and it will have
-              // sent an audit record to the action to cache by its callCount token.
+              // sent an audit record to the Action to cache by its callCount token.
               // Actions may be listened to by multiple state containers, and may
               // therefore have multiple audit records attached to each call.
-              // However, this state container will only execute an undo when the guid
-              // of the audit record matches the index of the state it changed, so
-              // we can count on it to be unique against this state container
+              // However, THIS state container should only evaluate an undo when the guid
+              // of the audit record matches the index of the state it changed,
+              // AND the container_id of the audit record matches this container's
+              // container_id so we can count on it to undo the correct state transformation.
               let auditRecord = auditRecords.find(ar => {
                 return (ar.$$container_id === $$container_id);
               });
@@ -521,13 +522,19 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
           action.onRedo(
             (token, auditRecords) => {
-              // resume normal workflow for undone pending reduce request
-              updatePendingReducer(position, token, {canceled: false})
+              // resume normal workflow for undone but still pending reduce request
+              updatePendingReducer(position, token, {canceled: false});
               // see above for iteration reasoning
               let auditRecord = auditRecords.find(ar => {
                 return (ar.$$container_id === $$container_id);
               });
               auditRecord && queueRedo(auditRecord.$$index, auditRecord.guid);
+            }
+          );
+
+          action.onCancel(
+            (token) => {
+              updatePendingReducer(position, token, {canceled: true});
             }
           );
         }
