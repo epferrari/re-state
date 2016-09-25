@@ -29,6 +29,10 @@ module.exports = class Action {
 			emit(CANCEL_ACTION, token);
 		}
 
+		function flush(){
+			calls = {};
+		}
+
 		const functor = function functor(payload){
 			callCount++;
 			emit(ACTION_TRIGGERED, {token: callCount, payload: payload});
@@ -36,7 +40,10 @@ module.exports = class Action {
 			return {
 				undo: undo.bind(null, callCount),
 				redo: redo.bind(null, callCount),
-				cancel: cancel.bind(null, callCount)
+				cancel: cancel.bind(null, callCount),
+				flush(){
+					delete calls[callCount];
+				}
 			};
 		};
 
@@ -47,12 +54,13 @@ module.exports = class Action {
 		};
 
 		getter(functor, 'callCount', () => callCount);
-		defineProperty(functor, '$$name', name)
-		defineProperty(functor, '$$type', ACTION)
+		defineProperty(functor, '$$name', name);
+		defineProperty(functor, '$$type', ACTION);
 		defineProperty(functor, 'onTrigger', fn => on(ACTION_TRIGGERED, fn));
 		defineProperty(functor, 'onUndo', fn => on(UNDO_ACTION, fn));
 		defineProperty(functor, 'onRedo', fn => on(REDO_ACTION, fn));
 		defineProperty(functor, 'onCancel', fn => on(CANCEL_ACTION, fn));
+		defineProperty(functor, 'flush', flush);
 
 		return functor;
 	}

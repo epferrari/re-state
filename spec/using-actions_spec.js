@@ -87,12 +87,12 @@ describe("transforming state through actions", () => {
 
   afterEach(() => jasmine.clock().uninstall());
 
-  describe("using Action's returned undo/redo/cancel functions", () => {
+  describe("using Action's returned functions object", () => {
     beforeEach(() => {
       store.when(addItem, onAddItem);
     });
 
-    it("can undo the action's effect on state", () => {
+    it("#undo reverses the action's effect on state", () => {
       let itemAdded = addItem(0);
       expect(store.trigger).not.toHaveBeenCalled();
 
@@ -116,7 +116,7 @@ describe("transforming state through actions", () => {
       expect(store.trigger).toHaveBeenCalledTimes(4);
     });
 
-    it("will not add or remove states from the history", () => {
+    it("#undo and #redo will not add or remove states from the history", () => {
       expect(store.depth).toBe(1);
 
       let itemAdded = addItem(0);
@@ -131,7 +131,7 @@ describe("transforming state through actions", () => {
       expect(store.depth).toBe(2);
     });
 
-    it("executes asyncronously", () => {
+    it("#undo executes asyncronously", () => {
       let itemAdded = addItem(0);
       expect(store.trigger).not.toHaveBeenCalled();
       expect(store.state.cart).toEqual([]);
@@ -207,6 +207,19 @@ describe("transforming state through actions", () => {
         expect(store.trigger).toHaveBeenCalledTimes(3);
       });
     });
+
+    describe("#flush", () => {
+      it("removes references to the invocation so the action cannot be undone/redone", () => {
+        let add = addItem(1);
+        tick();
+
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+        add.flush();
+        add.undo();
+        tick();
+        expect(store.state.cart).toEqual([{id: 1, qty: 1}]);
+      })
+    })
   });
 
   describe("using the `TAIL` strategy (Action.strategies.TAIL)", () => {
@@ -566,6 +579,38 @@ describe("transforming state through actions", () => {
       tick();
       expect(cart.state.items.length).toBe(1);
       expect(rewardsPurchases.state.items.length).toBe(1);
+    });
+  });
+
+  describe("flushing invocation tokens to free memory", () => {
+    beforeEach(() => {
+      store.when(addItem, onAddItem, Action.strategies.COMPOUND);
+    });
+
+    it("removes all tokens from the Action so no invocations may be undone or redone", () => {
+      let add1 = addItem(1);
+      let add2 = addItem(2);
+      tick();
+      let add3 = addItem(3);
+      tick();
+      expect(store.trigger).toHaveBeenCalledTimes(2);
+      expect(store.state.cart).toEqual([
+        {id: 1, qty: 1},
+        {id: 2, qty: 1},
+        {id: 3, qty: 1}
+      ]);
+
+      addItem.flush();
+      add1.undo();
+      add2.undo();
+      add3.undo();
+      tick();
+      expect(store.trigger).toHaveBeenCalledTimes(2);
+      expect(store.state.cart).toEqual([
+        {id: 1, qty: 1},
+        {id: 2, qty: 1},
+        {id: 3, qty: 1}
+      ]);
     });
   });
 });
