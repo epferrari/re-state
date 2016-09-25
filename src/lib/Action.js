@@ -1,7 +1,8 @@
 "use-strict";
 
-const {getter, defineProperty} = require('./utils');
+const {getter, defineProperty, typeOf} = require('./utils');
 const EventEmitter = require('./event-emitter');
+const InvalidActionError = require("./errors/InvalidActionError");
 const {
 	ACTION, ACTION_TRIGGERED,
 	UNDO_ACTION, REDO_ACTION, CANCEL_ACTION
@@ -9,7 +10,9 @@ const {
 
 
 module.exports = class Action {
-	constructor(name){
+	constructor(name, options = {}){
+		if(typeOf(name) !== 'string')
+			throw new InvalidActionError();
 
 		const emitter = new EventEmitter();
 		var emit = emitter.emit.bind(emitter),
@@ -35,6 +38,7 @@ module.exports = class Action {
 
 		const functor = function functor(payload){
 			callCount++;
+
 			emit(ACTION_TRIGGERED, {token: callCount, payload: payload});
 
 			return {
@@ -48,9 +52,16 @@ module.exports = class Action {
 		};
 
 		functor.didInvoke = (token, auditRecord) => {
-			if(!calls[token])
-				calls[token] = [];
-			calls[token].push(auditRecord);
+			if(
+				(typeOf(options.flushFrequency) === 'number') &&
+				(callCount % options.flushFrequency === 0)
+			){
+				calls = {};
+			}else{
+				if(!calls[token])
+					calls[token] = [];
+				calls[token].push(auditRecord);
+			}
 		};
 
 		getter(functor, 'callCount', () => callCount);

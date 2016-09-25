@@ -16,5 +16,10 @@ module.exports = {
       enumerable: false
     });
     return o;
+  },
+  typeOf(subject){
+    return ({}).toString.call(subject)
+      .match(/\s([a-zA-Z]+)/)[1]
+      .toLowerCase();
   }
 };

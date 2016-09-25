@@ -87,6 +87,46 @@ describe("transforming state through actions", () => {
 
   afterEach(() => jasmine.clock().uninstall());
 
+  describe("creating an action", () => {
+    it("must have a name", () => {
+      let shouldThrow = () => {
+        new Action();
+      };
+
+      expect(shouldThrow).toThrow()
+    });
+
+    describe("options", () => {
+      it("#flushFrequency determines how often the Action's internal audit records are cleared", () => {
+        addItem = new Action('addItem', {flushFrequency: 10});
+        store.when(addItem, onAddItem, Action.strategies.COMPOUND);
+
+        let add1 = addItem(1);
+        let n = 9;
+        while(n--){
+          addItem(2);
+        }
+        expect(addItem.callCount).toEqual(10);
+        tick();
+        // at this point, 10 invocations have been made so the actions flushes
+        // state is still transformed
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([
+          {id: 1, qty: 1},
+          {id: 2, qty: 9}
+        ]);
+        add1.undo();
+        tick();
+        // undo should have no effect because of the flush
+        expect(store.trigger).toHaveBeenCalledTimes(1);
+        expect(store.state.cart).toEqual([
+          {id: 1, qty: 1},
+          {id: 2, qty: 9}
+        ]);
+      })
+    })
+  })
+
   describe("using Action's returned functions object", () => {
     beforeEach(() => {
       store.when(addItem, onAddItem);
