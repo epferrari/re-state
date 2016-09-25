@@ -4,7 +4,7 @@ const {getter, defineProperty, typeOf} = require('./utils');
 const EventEmitter = require('./event-emitter');
 const InvalidActionError = require("./errors/InvalidActionError");
 const {
-	ACTION, ACTION_TRIGGERED,
+	ACTION, TRIGGER_ACTION,
 	UNDO_ACTION, REDO_ACTION, CANCEL_ACTION
 } = require('./constants');
 
@@ -39,7 +39,7 @@ module.exports = class Action {
 		const functor = function functor(payload){
 			callCount++;
 
-			emit(ACTION_TRIGGERED, {token: callCount, payload: payload});
+			emit(TRIGGER_ACTION, {token: callCount, payload: payload});
 
 			return {
 				undo: undo.bind(null, callCount),
@@ -67,7 +67,7 @@ module.exports = class Action {
 		getter(functor, 'callCount', () => callCount);
 		defineProperty(functor, '$$name', name);
 		defineProperty(functor, '$$type', ACTION);
-		defineProperty(functor, 'onTrigger', fn => on(ACTION_TRIGGERED, fn));
+		defineProperty(functor, 'onTrigger', fn => on(TRIGGER_ACTION, fn));
 		defineProperty(functor, 'onUndo', fn => on(UNDO_ACTION, fn));
 		defineProperty(functor, 'onRedo', fn => on(REDO_ACTION, fn));
 		defineProperty(functor, 'onCancel', fn => on(CANCEL_ACTION, fn));

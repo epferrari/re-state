@@ -23,13 +23,11 @@ module.exports = keyMirror([
   "REDO",
 
   // action events
-  "ACTION_TRIGGERED",
+  "TRIGGER_ACTION",
   "UNDO_ACTION",
   "REDO_ACTION",
   "CANCEL_ACTION",
 
   // store events
-  "STATE_CHANGE",
-  "SET_STATE_INVOKED",
-  "REDUCE_INVOKED",
+  "STATE_CHANGE"
 ]);

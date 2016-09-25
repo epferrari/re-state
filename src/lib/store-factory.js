@@ -11,7 +11,7 @@ const CircularInvocationError = require('./errors/CircularInvocationError');
 const {getter, defineProperty} = require('./utils');
 const {
   ACTION, ASYNC_ACTION,
-  STATE_CHANGE, REDUCE_INVOKED,
+  STATE_CHANGE,
   READY, QUEUED, REDUCING,
   RESOLVE, CANCEL, UNDO, REDO} = require('./constants');
 
