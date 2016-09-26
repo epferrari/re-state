@@ -313,8 +313,10 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           let entry = {
             $state: nextState,
             guid: meta.guid,
+            original: undefined,
             payload: meta.payload,
-            reducerInvoked: meta.reducer_position
+            reducerInvoked: meta.reducer_position,
+            reverted: false
           };
 
           // add new entry to history
