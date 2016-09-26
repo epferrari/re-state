@@ -1,0 +1,1 @@
+global.ophelia = require('./factory');

@@ -6,7 +6,7 @@
   "scripts": {
     "test": "babel-node ./spec",
     "docs:api:store": "jsdoc2md ./src/store-factory.js > docs/store.md",
-    "build": "babel ./src --out-dir ./lib"
+    "build": "babel ./src --out-dir ./build"
   },
   "keywords": [
     "flux",
@@ -19,9 +19,9 @@
   "author": "Ethan Ferrari <ethan@ethanferrari.com>",
   "license": "MIT",
   "dependencies": {
-    "bluebird": "^3.3.5",
     "chance": "^1.0.2",
-    "immutable": "^3.7.6"
+    "immutable": "^3.7.6",
+    "lodash.merge": "^4.6.0"
   },
   "devDependencies": {
     "babel-cli": "^6.6.5",

@@ -4,8 +4,8 @@ const {getter, defineProperty, typeOf} = require('./utils');
 const EventEmitter = require('./event-emitter');
 const InvalidActionError = require("./errors/InvalidActionError");
 const {
-	ACTION, TRIGGER_ACTION,
-	UNDO_ACTION, REDO_ACTION, CANCEL_ACTION
+	ACTION,
+	TRIGGER_ACTION, UNDO_ACTION, REDO_ACTION, CANCEL_ACTION
 } = require('./constants');
 
 

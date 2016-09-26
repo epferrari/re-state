@@ -1,4 +1,4 @@
-module.exports = {
+const utils = {
   getter(o, p, fn){
     Object.defineProperty(o, p, {
       get: function(){
@@ -21,5 +21,16 @@ module.exports = {
     return ({}).toString.call(subject)
       .match(/\s([a-zA-Z]+)/)[1]
       .toLowerCase();
+  },
+  isPlainObject(subject){
+    return utils.typeOf(subject) === 'object';
+  },
+  isArray(subject){
+    return utils.typeOf(subject) === 'array';
+  },
+  isFunction(subject){
+    return utils.typeOf(subject) === 'function'
   }
 };
+
+module.exports = utils;
