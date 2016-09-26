@@ -338,23 +338,23 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history stack in unpredicatable ways
-        if($$history[atIndex] && $$history[atIndex].guid === guid){
-
+        if(
+          $$history[atIndex] &&
+          ($$history[atIndex].guid === guid) &&
+          !$$history[atIndex].reverted
+        ){
           let lastHistory = $$history[atIndex - 1];
-
-          if(!$$history[atIndex].reverted){
-            // duplicate the history state of originalHistory as if action was never called
-            $$history[atIndex] = {
-              $state: lastHistory.$state,
-              guid: guid,
-              original: $$history[atIndex],
-              payload: {},
-              reducerInvoked: 0,
-              reverted: true
-            };
-            return true;
-          }
-          return false;
+          // this history entry's state becomes identical to the last entry, the
+          // payload is an empty object, and the reducer invoked becomes a pass thrus
+          $$history[atIndex] = {
+            $state: lastHistory.$state,
+            guid: guid,
+            original: $$history[atIndex],
+            payload: {},
+            reducerInvoked: 0,
+            reverted: true
+          };
+          return true;
         } else {
           return false;
         }
@@ -367,10 +367,10 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       }
 
       function redo(atIndex, guid){
-        // ensure that a new history tree wasn't created at an index before atIndex
+        // ensure that we're in the correct history tree, as above in `undo`
         if(
           $$history[atIndex] &&
-          $$history[atIndex].guid === guid &&
+          ($$history[atIndex].guid === guid) &&
           $$history[atIndex].reverted
         ){
           $$history[atIndex] = $$history[atIndex].original;
@@ -408,7 +408,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             }
 
 
-            // mimic resolveRequest for the middleware, add revision type key
+            // mimic resolveRequest for the middleware
             let meta = {
               action_name: originalReducer.actionName,
               guid: entry.guid,
@@ -421,7 +421,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
             let revisedDelta = applyMiddleware(reducerInvoke, meta)(entry.payload);
 
-            // mimic pushState for the merge
+            // mimic the merge in pushState, but don't create a new entry
             entry.$state = prevEntry.$state.mergeDeepWith(merger, revisedDelta);
             return ($$history[fromIndex + i] = entry);
           }, $$history[fromIndex - 1]);
