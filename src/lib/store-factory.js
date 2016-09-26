@@ -1,5 +1,6 @@
 "use-strict";
 
+const merge = require("lodash.merge");
 const Action = require('./action');
 const EventEmitter = require('./event-emitter');
 const InvalidActionError = require("./errors/InvalidActionError");
@@ -8,29 +9,23 @@ const InvalidReturnError = require('./errors/InvalidReturnError');
 const InvalidReducerError = require('./errors/InvalidReducerError');
 const InvalidIndexError = require('./errors/InvalidIndexError');
 const CircularInvocationError = require('./errors/CircularInvocationError');
-const {getter, defineProperty, typeOf} = require('./utils');
+
+const {
+  getter, defineProperty, typeOf,
+  isArray, isFunction, isPlainObject} = require('./utils');
+
 const {
   ACTION, ASYNC_ACTION,
   STATE_CHANGE,
   READY, QUEUED, REDUCING,
   RESOLVE, CANCEL, UNDO, REDO} = require('./constants');
 
-module.exports = function storeFactory(Immutable, lodash, generateGuid){
+module.exports = function storeFactory(Immutable, generateGuid){
+  let clone = obj => Immutable.Map(obj).toJS();
 
-  let {
-    clone,
-    isPlainObject,
-    isFunction,
-    isArray,
-    merge,
-    reduce,
-    chain,
-    contains,
-    findIndex} = lodash;
-
-  return class StateStore {
+  return class StateContainer {
     /**
-    * @constructs StateStore
+    * @constructs StateContainer
     * @param {object} initialState={} - an initial state for your store
     * @param {array} [middleware=[]] - an array of middleware functions to apply during state transitions
     */
@@ -46,8 +41,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           currentState,
           phase = READY,
           pendingRevisions = [];
-
-
 
       if(typeof initialState !== 'undefined' && !isPlainObject(initialState))
         throw new InvalidDeltaError();
@@ -176,21 +169,19 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       */
       function resolveActions(){
         let initialIndex = $$index;
-        let reducersToCall = chain($$reducers.toJS())
+        $$reducers
           .filter(reducer => reducer.requests.length)
           .sortBy(reducer => reducer.position)
-          .value()
-
-        reduce(reducersToCall, (state, reducer) => {
-          // run the state through the reducer
-          let nextState = resolveReducer(state, reducer);
-          // clear action requests for the next cycle and create new immutable list
-          $$reducers = $$reducers.update(reducer.position, r => {
-            r.requests = [];
-            return r;
-          });
-          return nextState;
-        }, merge({}, currentState()) );
+          .reduce((state, reducer) => {
+            // run the state through the reducer
+            let nextState = resolveReducer(state, reducer);
+            // clear action requests for the next cycle and create new immutable list
+            $$reducers = $$reducers.update(reducer.position, r => {
+              r.requests = [];
+              return r;
+            });
+            return nextState;
+          }, currentState() );
 
         // was history updated?
         return (initialIndex !== $$index);
@@ -205,21 +196,22 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       * @returns {object} - the updated state
       */
 			function resolveReducer(lastState, reducer){
+        let {requests} = reducer;
         switch((reducer.strategy || "").toLowerCase()){
           case (Action.strategies.COMPOUND.toLowerCase()):
             // reduce down all the requested invocations
-            return reduce(reducer.requests, (state, request) => {
+            return Immutable.Seq(requests).reduce((state, request) => {
               return resolveRequest(state, reducer, request);
             }, lastState);
           case (Action.strategies.HEAD.toLowerCase()):
             // transform using the first requested invocation queued
-            return resolveRequest(lastState, reducer, reducer.requests[0]);
+            return resolveRequest(lastState, reducer, requests[0]);
           case (Action.strategies.TAIL.toLowerCase()):
             // resolve using the last request invocation queued
-            return resolveRequest(lastState, reducer, reducer.requests.pop());
+            return resolveRequest(lastState, reducer, requests.pop());
           default:
             // use tailing strategy
-            return resolveRequest(lastState, reducer, reducer.requests.pop());
+            return resolveRequest(lastState, reducer, requests.pop());
         }
       }
 
@@ -306,7 +298,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         nextState = lastState.mergeDeepWith(merger, delta);
         // add a new state to the $$history and increment index
         // return state to the next reducer
-        if(!Immutable.is(lastState, nextState)){
+        if(!lastState.equals(nextState)){
           // remove any history past current index
           $$history = $$history.slice(0, $$index + 1);
 
@@ -434,7 +426,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       function updatePendingReducer(atIndex, requestToken, config){
         // cancel the action request if it is pending
         $$reducers = $$reducers.update(atIndex, reducer => {
-          let pIndex = findIndex(reducer.requests, r => (r.token === requestToken));
+          let pIndex = reducer.requests.findIndex(r => (r.token === requestToken));
           if(pIndex >= 0)
             reducer.requests[pIndex].canceled = config.canceled;
           return reducer;
@@ -497,7 +489,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         };
 
         // only add each Action once
-        if(!contains($$reducers.toJS(), reducer)){
+        if(!$$reducers.contains(reducer)){
           $$reducers = $$reducers.push(reducer);
 
           // kick off a reduce cycle when the reducer action is called anywhere in the app
@@ -565,7 +557,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     *   listened to with `<StateContainer>.when`
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     */
       this.when = function when(action, reducer, strategy){
         if( isFunction(action) ){
@@ -593,7 +585,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       // set a third reducer that entirely replaces the state with a new state
       let replaceStateAction = new Action('replaceState');
       let replaceStateReducer = (lastState, newState) => {
-        return reduce(lastState, (acc, val, key) => {
+        return Immutable.Seq(lastState).reduce((acc, val, key) => {
           acc[key] = newState[key] || "$unset";
           return acc;
         }, newState);
@@ -609,7 +601,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @method
     * @instance
     * @fires STATE_CHANGE
-    * @memberof StateStore
+    * @memberof StateContainer
     */
       this.setState = function setState(deltaMap){
         if(!isPlainObject(deltaMap)){
@@ -629,7 +621,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @method
     * @instance
     * @fires STATE_CHANGE
-    * @memberof StateStore
+    * @memberof StateContainer
     */
       this.replaceState = function replaceState(newState){
         if(!isPlainObject(newState)){
@@ -648,7 +640,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @param {boolean} hard=false - DESTRUCTIVE! delete entire history and start over at history[0]
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @fires STATE_CHANGE
     */
       this.reset = function reset(hard){
@@ -666,11 +658,11 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     /**
     *
     * @name revert
-    * @desc reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past index.
+    * @desc reset the StateContainer's history to an index. DESTRUCTIVE! Deletes history past index.
     * @param {int} index - what state to move the history to
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @fires STATE_CHANGE
     */
       this.revert = function revert(index){
@@ -686,11 +678,11 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     /**
     *
     * @name fastForward
-    * @desc move the StateStore's history index ahead `n` frames. Does not alter history.
+    * @desc move the StateContainer's history index ahead `n` frames. Does not alter history.
     * @param {int} n=1 - how many frames to fast forward. Cannot fast forward past the last frame.
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @fires STATE_CHANGE
     */
       this.fastForward = function fastForward(n){
@@ -707,11 +699,11 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     /**
     *
     * @name rewind
-    * @desc move the StateStore's history index back `n` frames. Does not alter history.
+    * @desc move the StateContainer's history index back `n` frames. Does not alter history.
     * @param {int} n=1 - how many frames to rewind. Cannot rewind past 0.
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @fires STATE_CHANGE
     */
       this.rewind = function rewind(n){
@@ -728,11 +720,11 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     /**
     *
     * @name goto
-    * @desc move the StateStore's history index to `index`. Does not alter history.
+    * @desc move the StateContainer's history index to `index`. Does not alter history.
     * @param {int} index - the index to move to
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @fires STATE_CHANGE
     */
       this.goto = function goto(index){
@@ -754,7 +746,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @desc Get the current state as an Immutable Map
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @returns {Immutable.Map}
     */
     getImmutableState(){
@@ -768,7 +760,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @desc Get the initial app state that was passed to the constructor
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @returns {object} state
     */
     getInitialState(){
@@ -783,7 +775,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @param {int} [index=current]
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     * @returns {object} state
     */
     getState(index){
@@ -801,7 +793,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @returns {function} an unsubscribe function for the listener
     * @method
     * @instance
-    * @memberof StateStore
+    * @memberof StateContainer
     */
     onchange(listener, thisBinding){
       return this._emitter.on(STATE_CHANGE, listener, thisBinding);
@@ -817,7 +809,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @method
     * @instance
     * @fires STATE_CHANGE
-    * @memberof StateStore
+    * @memberof StateContainer
     */
     trigger(){
       this._emitter.emit(
