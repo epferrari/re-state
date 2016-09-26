@@ -8,7 +8,7 @@ const InvalidReturnError = require('./errors/InvalidReturnError');
 const InvalidReducerError = require('./errors/InvalidReducerError');
 const InvalidIndexError = require('./errors/InvalidIndexError');
 const CircularInvocationError = require('./errors/CircularInvocationError');
-const {getter, defineProperty} = require('./utils');
+const {getter, defineProperty, typeOf} = require('./utils');
 const {
   ACTION, ASYNC_ACTION,
   STATE_CHANGE,
@@ -72,10 +72,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
       currentState = () => {
         let entry = $$history.get($$index);
-        let state = entry.$state.toJS();
-        return reduce(state, (acc, val, key) => {
-          if(val !== undefined)
+        return entry.$state.reduce((acc, val, key) => {
+          if(val !== undefined){
+            if(typeOf(val.toJS) === 'function')
+              val = val.toJS();
             acc[key] = val;
+          }
           return acc;
         }, {});
       };
