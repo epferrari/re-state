@@ -1,6 +1,5 @@
 "use-strict";
 
-import Promise from 'bluebird';
 import {Store, Action} from '../src';
 import _ from 'lodash';
 
