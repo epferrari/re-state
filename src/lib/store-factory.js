@@ -583,19 +583,19 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       this.when(new Action('noop'), lastState => lastState);
 
       // set a second reducer to handle direct setState operations
-      let action_setState = new Action("setState");
-      let reducer_setState = (lastState, deltaMap) => merge({}, lastState, deltaMap);
-      this.when(action_setState, reducer_setState, Action.strategies.COMPOUND);
+      let setStateAction = new Action("setState");
+      let setStateReducer = (lastState, deltaMap) => merge({}, lastState, deltaMap);
+      this.when(setStateAction, setStateReducer, Action.strategies.COMPOUND);
 
       // set a third reducer that entirely replaces the state with a new state
-      let action_replaceState = new Action('replaceState');
-      let reducer_replaceState = (lastState, newState) => {
+      let replaceStateAction = new Action('replaceState');
+      let replaceStateReducer = (lastState, newState) => {
         return reduce(lastState, (acc, val, key) => {
           acc[key] = newState[key] || "$unset";
           return acc;
         }, newState);
       };
-      this.when(action_replaceState, reducer_replaceState, Action.strategies.TAIL);
+      this.when(replaceStateAction, replaceStateReducer, Action.strategies.TAIL);
 
     /**
     *
@@ -612,7 +612,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         if(!isPlainObject(deltaMap)){
           throw new InvalidDeltaError();
         } else {
-          return action_setState(deltaMap);
+          return setStateAction(deltaMap);
         }
       };
 
@@ -632,7 +632,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         if(!isPlainObject(newState)){
           throw new InvalidDeltaError();
         } else {
-          return action_replaceState(newState);
+          return replaceStateAction(newState);
         }
       };
 
@@ -656,13 +656,13 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           trigger();
         } else {
           // soft reset, push the initial state to the end of the $$history stack
-          action_replaceState(this.getInitialState());
+          replaceStateAction(this.getInitialState());
         }
-      }.bind(this);
+      };
 
     /**
     *
-    * @name resetToState
+    * @name revert
     * @desc reset the StateStore's history to an index. DESTRUCTIVE! Deletes history past index.
     * @param {int} index - what state to move the history to
     * @method
@@ -670,7 +670,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
     * @memberof StateStore
     * @fires STATE_CHANGE
     */
-      this.resetToState = function resetToState(index){
+      this.revert = function revert(index){
         if(!Number.isInteger(index)){
           throw new InvalidIndexError();
         } else if(index >= 0 && index <= $$history.length -1){
