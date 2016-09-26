@@ -59,20 +59,20 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       $$reducers = Immutable.List();
 
       // private stack of [reducer index, Immutable Map app state]
-      $$history = [{
+      $$history = Immutable.List([{
         reducerInvoked: 0,
         payload: {},
         $state: Immutable.Map().merge(initialState),
         guid: generateGuid()
-      }];
-
+      }]);
 
       $$middleware = isArray(middleware) ? middleware : [];
 
       emitter = new EventEmitter();
 
       currentState = () => {
-        let state = Immutable.Map($$history[$$index].$state).toJS();
+        let entry = $$history.get($$index);
+        let state = entry.$state.toJS();
         return reduce(state, (acc, val, key) => {
           if(val !== undefined)
             acc[key] = val;
@@ -84,8 +84,8 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
       // get accessors
       getter(this, 'reducers', () => $$reducers.toJS() );
-      getter(this, 'depth', () => $$history.length);
-      getter(this, 'history', () => $$history);
+      getter(this, 'depth', () => $$history.size);
+      getter(this, 'history', () => $$history.toArray());
       getter(this, 'index', () => $$index);
       getter(this, 'state', () => currentState());
       getter(this, '_emitter', () => emitter );
@@ -300,14 +300,12 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         delta = getDelta();
         if( !isPlainObject(delta) ) throw new InvalidReturnError();
 
-        // remove any history past current index
-        $$history = $$history.slice(0, $$index + 1);
-
-        lastState = $$history[$$index].$state;
+        lastState = $$history.get($$index).$state;
         nextState = lastState.mergeDeepWith(merger, delta);
         // add a new state to the $$history and increment index
         // return state to the next reducer
         if(!Immutable.is(lastState, nextState)){
+          // remove any history past current index
           $$history = $$history.slice(0, $$index + 1);
 
           let entry = {
@@ -320,7 +318,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
           };
 
           // add new entry to history
-          $$history.push(entry);
+          $$history = $$history.push(entry);
 
           // update the pointer to new state in $$history
           $$index++;
@@ -338,22 +336,23 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         // ensure that the history being undone is actually the state that this action created
         // if the history was rewound, branched, or replaced, this action no longer affects the stack
         // and an undo could break the history stack in unpredicatable ways
+        let entry = $$history.get(atIndex);
         if(
-          $$history[atIndex] &&
-          ($$history[atIndex].guid === guid) &&
-          !$$history[atIndex].reverted
+          entry &&
+          (entry.guid === guid) &&
+          !entry.reverted
         ){
-          let lastHistory = $$history[atIndex - 1];
+          let lastEntry = $$history.get(atIndex - 1);
           // this history entry's state becomes identical to the last entry, the
           // payload is an empty object, and the reducer invoked becomes a pass thrus
-          $$history[atIndex] = {
-            $state: lastHistory.$state,
+          $$history = $$history.set(atIndex, {
+            $state: lastEntry.$state,
             guid: guid,
-            original: $$history[atIndex],
+            original: entry,
             payload: {},
             reducerInvoked: 0,
             reverted: true
-          };
+          });
           return true;
         } else {
           return false;
@@ -368,12 +367,13 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
       function redo(atIndex, guid){
         // ensure that we're in the correct history tree, as above in `undo`
+        let entry = $$history.get(atIndex);
         if(
-          $$history[atIndex] &&
-          ($$history[atIndex].guid === guid) &&
-          $$history[atIndex].reverted
+          entry &&
+          (entry.guid === guid) &&
+          entry.reverted
         ){
-          $$history[atIndex] = $$history[atIndex].original;
+          $$history = $$history.set(atIndex, entry.original);
           return true;
         } else {
           return false;
@@ -393,6 +393,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
 			function reviseHistory(fromIndex){
         $$history
+          .toSeq()
           .slice(fromIndex)
           .reduce((prevEntry, entry, i) => {
             let reducers = $$reducers.toJS(),
@@ -406,7 +407,6 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
             }else{
               originalReducer = reducer;
             }
-
 
             // mimic resolveRequest for the middleware
             let meta = {
@@ -423,8 +423,9 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
 
             // mimic the merge in pushState, but don't create a new entry
             entry.$state = prevEntry.$state.mergeDeepWith(merger, revisedDelta);
-            return ($$history[fromIndex + i] = entry);
-          }, $$history[fromIndex - 1]);
+            $$history = $$history.set((fromIndex + i), entry);
+            return entry;
+          }, $$history.get(fromIndex - 1));
       }
 
 
@@ -651,7 +652,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       this.reset = function reset(hard){
         if(hard === true){
           // hard reset, clears the entire $$history stack, no previous histories are saved
-          $$history = [$$history[0]];
+          $$history = $$history.setSize(1);
           $$index = 0;
           trigger();
         } else {
@@ -673,7 +674,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       this.revert = function revert(index){
         if(!Number.isInteger(index)){
           throw new InvalidIndexError();
-        } else if(index >= 0 && index <= $$history.length -1){
+        } else if(index >= 0 && index <= $$history.size -1){
           $$index = index;
           $$history = $$history.slice(0, $$index + 1);
           trigger();
@@ -696,7 +697,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
         } else {
           n = (n || 1)
           // ensure we don't go past the end of history
-          $$index = Math.min( ($$index + Math.abs(n)), ($$history.length - 1));
+          $$index = Math.min( ($$index + Math.abs(n)), ($$history.size - 1));
           trigger();
         }
       };
@@ -735,7 +736,7 @@ module.exports = function storeFactory(Immutable, lodash, generateGuid){
       this.goto = function goto(index){
         if(!Number.isInteger(index)){
           throw new InvalidIndexError();
-        } else if(index >= 0 && index <= $$history.length -1){
+        } else if(index >= 0 && index <= $$history.size -1){
           $$index = index;
           trigger();
         }
